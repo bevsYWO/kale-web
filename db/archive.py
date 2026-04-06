@@ -46,76 +46,99 @@ def append_to_archive(
     """
     Upsert contacts from df into master_contacts and client_contacts.
     Returns (added, skipped).
+    Uses batched writes to avoid per-row HTTP requests.
     """
     if not is_configured():
         return 0, 0
 
-    sb = get_client()
-    today = _today()
+    sb        = get_client()
+    today     = _today()
     email_col = _email_col(df)
     if not email_col:
         return 0, 0
 
-    added   = 0
-    skipped = 0
-
+    # Build valid rows
+    client_rows = []
+    emails_seen = []
     for _, row in df.iterrows():
         email = str(row[email_col]).strip().lower()
-        if not email or '@' not in email:
-            skipped += 1
+        if not email or "@" not in email:
             continue
-
         row_data = {k: str(v) for k, v in row.items()}
+        client_rows.append({
+            "email":       email,
+            "client":      client_name,
+            "date_added":  today,
+            "source_file": source_file,
+            "row_data":    row_data,
+        })
+        emails_seen.append(email)
 
-        # Upsert into client_contacts (unique on lower(email) + client)
-        try:
-            sb.table("client_contacts").upsert(
-                {
-                    "email":       email,
-                    "client":      client_name,
-                    "date_added":  today,
-                    "source_file": source_file,
-                    "row_data":    row_data,
-                },
-                on_conflict="email,client",
+    if not client_rows:
+        return 0, len(df)
+
+    skipped = 0
+
+    # Batch upsert client_contacts — one request for the whole file
+    try:
+        sb.table("client_contacts").upsert(
+            client_rows, on_conflict="email,client"
+        ).execute()
+    except Exception:
+        skipped += len(client_rows)
+        return 0, skipped
+
+    # Fetch all existing master_contacts for these emails — one request
+    try:
+        existing_result = (
+            sb.table("master_contacts")
+            .select("id,email,clients,source_files")
+            .in_("email", emails_seen)
+            .execute()
+        )
+        existing_map = {
+            r["email"]: r for r in (existing_result.data or [])
+        }
+    except Exception:
+        return 0, skipped
+
+    # Compute updates and inserts in memory
+    to_update = []
+    to_insert = []
+    for email in emails_seen:
+        if email in existing_map:
+            rec     = existing_map[email]
+            clients = list(set((rec.get("clients") or []) + [client_name]))
+            sources = list(set((rec.get("source_files") or []) + [source_file]))
+            to_update.append({
+                "id":           rec["id"],
+                "clients":      clients,
+                "last_seen":    today,
+                "source_files": sources,
+            })
+        else:
+            to_insert.append({
+                "email":        email,
+                "clients":      [client_name],
+                "first_seen":   today,
+                "last_seen":    today,
+                "source_files": [source_file],
+            })
+
+    # Batch upsert master_contacts — one or two requests total
+    try:
+        if to_insert:
+            sb.table("master_contacts").upsert(
+                to_insert, on_conflict="email"
             ).execute()
-        except Exception:
-            skipped += 1
-            continue
+        if to_update:
+            sb.table("master_contacts").upsert(
+                to_update, on_conflict="id"
+            ).execute()
+    except Exception as e:
+        skipped += len(to_update) + len(to_insert)
 
-        # Upsert into master_contacts
-        try:
-            existing = (
-                sb.table("master_contacts")
-                .select("id,clients,source_files")
-                .eq("email", email)
-                .execute()
-            )
-            if existing.data:
-                rec      = existing.data[0]
-                clients  = list(set(rec.get("clients", []) + [client_name]))
-                sources  = list(set(rec.get("source_files", []) + [source_file]))
-                sb.table("master_contacts").update(
-                    {
-                        "clients":      clients,
-                        "last_seen":    today,
-                        "source_files": sources,
-                    }
-                ).eq("id", rec["id"]).execute()
-            else:
-                sb.table("master_contacts").insert(
-                    {
-                        "email":        email,
-                        "clients":      [client_name],
-                        "first_seen":   today,
-                        "last_seen":    today,
-                        "source_files": [source_file],
-                    }
-                ).execute()
-            added += 1
-        except Exception:
-            skipped += 1
-
+    added = len(emails_seen) - skipped
     return added, skipped
 
 
