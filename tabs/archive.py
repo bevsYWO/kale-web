@@ -86,13 +86,24 @@ Every time you clean a file through any tab (Riipen, N2, N2 Recruiting, Terraboo
         st.info("No contacts found with the current filters.")
         return
 
-    # Flatten array columns for display
+    # Flatten array columns and reorder for readability
     display_df = df.copy()
     for col in ["clients", "source_files"]:
         if col in display_df.columns:
             display_df[col] = display_df[col].apply(
                 lambda v: ", ".join(v) if isinstance(v, list) else str(v)
             )
+
+    col_order = [c for c in ["email", "clients", "first_seen", "last_seen", "source_files"]
+                 if c in display_df.columns]
+    display_df = display_df[col_order + [c for c in display_df.columns if c not in col_order]]
+    display_df = display_df.rename(columns={
+        "clients":      "Clients",
+        "first_seen":   "First Seen",
+        "last_seen":    "Last Seen",
+        "source_files": "Source File",
+        "email":        "Email",
+    })
 
     st.dataframe(display_df, use_container_width=True, hide_index=True)
 

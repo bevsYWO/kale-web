@@ -9,7 +9,7 @@ from core.recruiting_cleaner import clean_recruiting_dataframe, N2R_EXPORT_RENAM
 from core.cleaner import compute_diff, build_summary, build_hotspots
 from components.stat_cards import render_stat_cards
 from components.diff_viewer import render_diff_table
-from components.export_button import render_export_button
+from components.export_button import render_export_button, build_filename
 from db.archive import append_to_archive, check_dupes
 from db.platform_history import get_platforms_for_emails, record_export
 from db.client import is_configured
@@ -85,7 +85,9 @@ Each contact is automatically checked against the master archive. The *In Client
                 state["changes"]  = changes
                 state["filename"] = uploaded.name
                 if is_configured():
-                    added, skipped = append_to_archive(df_clean, "N2 Recruiting", uploaded.name)
+                    user = st.session_state.get("user_name", "")
+                    src  = f"{uploaded.name} ({user})" if user else uploaded.name
+                    added, skipped = append_to_archive(df_clean, "N2 Recruiting", src)
                     st.info(f"Archive: {added} rows written, {skipped} skipped.")
             except Exception as e:
                 st.error(f"Error processing file: {e}")
@@ -118,6 +120,12 @@ Each contact is automatically checked against the master archive. The *In Client
         {"label": "Dupes in Archive", "value": dupes},
         {"label": "Cells Changed",    "value": f"{cells_changed:,}"},
     ])
+
+    if total_rows > 0 and dupes / total_rows > 0.5:
+        st.warning(
+            f"⚠️ **{dupes:,} of {total_rows:,} leads ({dupes/total_rows:.0%}) are already in the archive.** "
+            "Consider reviewing before exporting."
+        )
 
     inner_tab1, inner_tab2, inner_tab3, inner_tab4 = st.tabs(
         ["Summary", "All Changes", "Review & Edit", "Hotspots"]
@@ -193,7 +201,7 @@ Each contact is automatically checked against the master archive. The *In Client
         render_export_button(
             state["df_clean"],
             label=f"Download for {platform}",
-            file_name=f"n2_recruiting_{platform.lower().replace(' ','_')}.csv",
+            file_name=build_filename("n2_recruiting", platform),
             key="n2r_dl",
         )
 

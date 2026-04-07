@@ -22,6 +22,7 @@ ACTIONS = [
     "Keep only rows containing",
     "Keep only numeric range",
     "Replace value",
+    "Replace containing",
     "Title Case",
     "UPPERCASE",
     "lowercase",
@@ -41,6 +42,7 @@ ACTION_DESCRIPTIONS = {
     "Remove rows containing":     "Removes any row where this column contains one of the keywords you enter (comma-separated). Example: entering 'spa, salon' removes every row that has either word.",
     "Keep only rows containing":  "Keeps only rows where this column contains at least one of the keywords — removes everything else. Example: entering 'HVAC, plumber' keeps only those business types.",
     "Replace value":              "Replaces an exact cell value with another. Format: old text -> new text. Example: 'N/A -> Unknown' replaces every cell that says exactly N/A.",
+    "Replace containing":         "Replaces any cell that contains the keyword with a new value. Format: keyword -> new text. Example: 'LLC -> ' removes LLC from every cell that contains it.",
     "Title Case":                 "Converts every word in this column to Title Case. Example: 'john smith' becomes 'John Smith'.",
     "UPPERCASE":                  "Converts every value in this column to ALL CAPS. Example: 'Vancouver' becomes 'VANCOUVER'.",
     "lowercase":                  "Converts every value in this column to all lowercase. Example: 'VANCOUVER' becomes 'vancouver'.",
@@ -121,6 +123,13 @@ def clean_general_dataframe(df, rules):
                 old, new_val = value.split(sep, 1)
                 old, new_val = old.strip(), new_val.strip()
                 df[col] = df[col].apply(lambda v: new_val if v.strip() == old else v)
+
+        elif action == "Replace containing":
+            sep = '\u2192' if '\u2192' in value else ('->' if '->' in value else None)
+            if sep:
+                old, new_val = value.split(sep, 1)
+                old, new_val = old.strip(), new_val.strip()
+                df[col] = df[col].apply(lambda v: new_val if old.lower() in v.lower() else v)
 
         elif action == "Title Case":
             df[col] = df[col].apply(lambda v: v.title() if v.strip() else v)

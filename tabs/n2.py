@@ -10,7 +10,7 @@ import streamlit as st
 
 from core.tier_mapper import get_tier, TIER_MAP, BUSINESS_TYPE_EXCLUDE
 from components.stat_cards import render_stat_cards
-from components.export_button import render_export_button
+from components.export_button import render_export_button, build_filename
 from db.archive import append_to_archive, check_dupes
 from db.platform_history import get_platforms_for_emails, record_export
 from db.client import is_configured
@@ -215,7 +215,9 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
             if is_configured():
                 ec_auto = _find_email_col(df_kept)
                 try:
-                    added, _ = append_to_archive(df_kept, "N2", state.get("filename", "unknown"))
+                    user = st.session_state.get("user_name", "")
+                    src  = f"{state.get('filename', 'unknown')} ({user})" if user else state.get("filename", "unknown")
+                    added, _ = append_to_archive(df_kept, "N2", src)
                     st.info(f"Archive: {added} emails saved.")
                 except Exception as e:
                     st.warning(f"Archive write failed: {e}")
@@ -252,6 +254,13 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
         {"label": "New Leads", "value": len(df_kept) - dupes},
     ])
 
+    _total_kept = len(df_kept)
+    if _total_kept > 0 and dupes / _total_kept > 0.5:
+        st.warning(
+            f"⚠️ **{dupes:,} of {_total_kept:,} leads ({dupes/_total_kept:.0%}) are already in the archive.** "
+            "These contacts have been seen before — review before sending."
+        )
+
     # ── Neighborhood filter ───────────────────────────────────────────────────
     nb_col = _find_neighborhood_col(df_kept)
     display_df = df_kept.copy()
@@ -278,10 +287,19 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
         st.divider()
         st.markdown("**Export Kept**")
         platform = st.selectbox("Platform", EXPORT_PLATFORMS, key="n2_platform")
+
+        available_tiers = sorted(display_df[tier_col].dropna().unique().tolist())
+        default_tiers   = [t for t in available_tiers if t in ("1", "2", "3")]
+        selected_tiers  = st.multiselect(
+            "Export tiers", available_tiers, default=default_tiers, key="n2_tier_export_filter"
+        )
+        export_df = display_df[display_df[tier_col].isin(selected_tiers)] if selected_tiers else display_df
+        st.caption(f"{len(export_df):,} rows ready for export")
+
         render_export_button(
-            display_df,
+            export_df,
             label=f"Download for {platform}",
-            file_name=f"n2_tiered_{platform.lower().replace(' ','_')}.csv",
+            file_name=build_filename("n2_tiered", platform),
             key="n2_dl",
         )
 

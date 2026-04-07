@@ -10,7 +10,7 @@ import streamlit as st
 from core.cleaner import clean_dataframe, compute_diff, build_summary, build_hotspots
 from components.stat_cards import render_stat_cards
 from components.diff_viewer import render_diff_table
-from components.export_button import render_export_button
+from components.export_button import render_export_button, build_filename
 from db.archive import append_to_archive, check_dupes
 from db.platform_history import get_platforms_for_emails, record_export
 from db.client import is_configured
@@ -86,7 +86,9 @@ Each contact is automatically checked against the master archive. The *In Client
                 state["filename"] = uploaded.name
                 if is_configured():
                     try:
-                        added, _ = append_to_archive(df_clean, "Riipen", uploaded.name)
+                        user = st.session_state.get("user_name", "")
+                        src  = f"{uploaded.name} ({user})" if user else uploaded.name
+                        added, _ = append_to_archive(df_clean, "Riipen", src)
                         st.info(f"Archive: {added} emails saved.")
                     except Exception as e:
                         st.warning(f"Archive write failed: {e}")
@@ -121,6 +123,12 @@ Each contact is automatically checked against the master archive. The *In Client
         {"label": "Dupes in Archive", "value": dupes},
         {"label": "Cells Changed",    "value": f"{cells_changed:,}"},
     ])
+
+    if total_rows > 0 and dupes / total_rows > 0.5:
+        st.warning(
+            f"⚠️ **{dupes:,} of {total_rows:,} leads ({dupes/total_rows:.0%}) are already in the archive.** "
+            "Consider using the **New only** filter before exporting."
+        )
 
     inner_tab1, inner_tab2, inner_tab3, inner_tab4 = st.tabs(
         ["Summary", "All Changes", "Review & Edit", "Hotspots"]
@@ -210,7 +218,7 @@ Each contact is automatically checked against the master archive. The *In Client
         render_export_button(
             export_df,
             label=f"Download for {platform}",
-            file_name=f"riipen_cleaned_{platform.lower().replace(' ','_')}.csv",
+            file_name=build_filename("riipen_cleaned", platform),
             key="riipen_dl",
         )
 

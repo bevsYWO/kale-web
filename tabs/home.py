@@ -72,7 +72,13 @@ def render():
 
     # ── Archive stats ─────────────────────────────────────────────────────────
     if is_configured():
-        st.markdown("#### Team Archive")
+        col_title, col_btn = st.columns([8, 1])
+        with col_title:
+            st.markdown("#### Team Archive")
+        with col_btn:
+            if st.button("Refresh", key="home_refresh"):
+                get_client_counts.clear()
+                st.rerun()
         try:
             counts = get_client_counts()
             total  = sum(counts.values())

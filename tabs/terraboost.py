@@ -7,7 +7,7 @@ import streamlit as st
 
 from core.terraboost_cleaner import clean_terraboost_dataframe, TB_EXPORT_RENAME
 from components.stat_cards import render_stat_cards
-from components.export_button import render_export_button
+from components.export_button import render_export_button, build_filename
 from db.archive import append_to_archive
 from db.platform_history import record_export
 from db.client import is_configured
@@ -75,7 +75,9 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
                 state["col_map"]    = cm
                 state["filename"]   = uploaded.name
                 if is_configured():
-                    added, _ = append_to_archive(kept, "Terraboost", uploaded.name)
+                    user = st.session_state.get("user_name", "")
+                    src  = f"{uploaded.name} ({user})" if user else uploaded.name
+                    added, _ = append_to_archive(kept, "Terraboost", src)
                     st.info(f"Archive: {added} emails saved.")
             except Exception as e:
                 st.error(f"Error processing file: {e}")
@@ -117,7 +119,7 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
         render_export_button(
             df_kept,
             label=f"Download Kept — {platform}",
-            file_name=f"terraboost_kept_{platform.lower().replace(' ','_')}.csv",
+            file_name=build_filename("terraboost_kept", platform),
             key="tb_dl",
         )
 

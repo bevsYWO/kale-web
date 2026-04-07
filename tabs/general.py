@@ -15,7 +15,7 @@ from core.general_cleaner import (
 from core.cleaner import compute_diff, build_summary
 from components.stat_cards import render_stat_cards
 from components.diff_viewer import render_diff_table
-from components.export_button import render_export_button
+from components.export_button import render_export_button, build_filename
 from db.archive import append_to_archive
 from db.platform_history import record_export
 from db.client import is_configured
@@ -182,7 +182,9 @@ A universal cleaner for any CSV. Always fixes encoding issues on every cell. Opt
                 state["df_removed"] = removed
                 state["changes"]    = changes
                 if is_configured():
-                    added, _ = append_to_archive(kept, "General", state.get("filename", "unknown"))
+                    user = st.session_state.get("user_name", "")
+                    src  = f"{state.get('filename', 'unknown')} ({user})" if user else state.get("filename", "unknown")
+                    added, _ = append_to_archive(kept, "General", src)
                     st.info(f"Archive: {added} emails saved.")
             except Exception as e:
                 st.error(f"Error during cleaning: {e}")
@@ -213,7 +215,7 @@ A universal cleaner for any CSV. Always fixes encoding issues on every cell. Opt
         render_export_button(
             df_kept,
             label=f"Download Kept — {platform}",
-            file_name=f"general_kept_{platform.lower().replace(' ','_')}.csv",
+            file_name=build_filename("general_kept", platform),
             key="gen_dl",
         )
 
