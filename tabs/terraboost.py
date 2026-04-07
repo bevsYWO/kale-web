@@ -42,6 +42,24 @@ def render():
     st.subheader("Terraboost Cleaner")
     st.caption("Validates store names, star ratings, and business categories for Terraboost campaigns.")
 
+    with st.expander("How to use this tab"):
+        st.markdown("""
+**What it does**
+Cleans Terraboost grocery store contact data — validates store names, cleans star ratings, and removes rows with missing business categories.
+
+**How to use it**
+1. Upload your CSV or Excel file.
+2. The tool cleans it automatically — review kept and removed rows in the tabs below.
+3. Select a platform and download.
+
+**What it checks**
+- **Store name** — must be a known chain (Harris Teeter, HEB, Kroger, Jewel, Albertsons). Invalid names are removed.
+- **Google Stars** — cleaned and normalized in place (must be 1.0–5.0). No rows removed for this.
+- **Business Category** — rows with blank or placeholder categories are removed.
+
+Removed rows are visible in the **Removed** tab and can be downloaded separately.
+        """)
+
     uploaded = st.file_uploader(
         "Upload CSV or Excel", type=["csv", "xlsx", "xls"], key="tb_upload"
     )
@@ -56,6 +74,9 @@ def render():
                 state["df_removed"] = removed
                 state["col_map"]    = cm
                 state["filename"]   = uploaded.name
+                if is_configured():
+                    added, _ = append_to_archive(kept, "Terraboost", uploaded.name)
+                    st.info(f"Archive: {added} emails saved.")
             except Exception as e:
                 st.error(f"Error processing file: {e}")
                 return
@@ -93,25 +114,12 @@ def render():
         st.markdown("**Export**")
         platform = st.selectbox("Platform", EXPORT_PLATFORMS, key="tb_platform")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            render_export_button(
-                df_kept,
-                label=f"Download Kept — {platform}",
-                file_name=f"terraboost_kept_{platform.lower().replace(' ','_')}.csv",
-                key="tb_dl",
-            )
-        with col2:
-            if st.button("Archive to Supabase", key="tb_archive"):
-                if not is_configured():
-                    st.warning("Supabase not configured — skipping archive.")
-                else:
-                    fname = state.get("filename", "unknown")
-                    added, skipped = append_to_archive(df_kept, "Terraboost", fname)
-                    ec = _find_email_col(df_kept)
-                    if ec:
-                        record_export(df_kept[ec].dropna().tolist(), platform, fname)
-                    st.success(f"Archived: {added} added, {skipped} skipped.")
+        render_export_button(
+            df_kept,
+            label=f"Download Kept — {platform}",
+            file_name=f"terraboost_kept_{platform.lower().replace(' ','_')}.csv",
+            key="tb_dl",
+        )
 
     with removed_tab:
         st.caption(f"{len(df_removed):,} rows removed")

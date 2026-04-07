@@ -290,15 +290,31 @@ def _parse_instruction_to_rules(col, instruction):
         rules.append({'column': col, 'action': 'Remove row if blank', 'value': ''})
         instr = re.sub(r'\b(no|not|remove)\s+blank\w*\b', '', instr)
 
-    # Collect "no X" / "no X and Y" terms -> Remove rows containing
+    def _strip_quotes(s):
+        return re.sub(r'''['""\u2018\u2019\u201c\u201d]''', '', s).strip()
+
+    # Collect remove/exclude terms -> Remove rows containing
     remove_terms = []
+
+    # Pattern 1: "remove X, Y" / "exclude X" / "filter out X" / "drop X"
+    # Matches the whole instruction so "remove non profit, church" works in one shot
+    _rm = re.match(
+        r'^(?:remove|exclude|filter\s+out|drop|delete)\s+(.+)$',
+        instr.strip(), re.IGNORECASE,
+    )
+    if _rm:
+        for t in re.split(r'(?:\s+and\s+|,\s*)', _rm.group(1), flags=re.IGNORECASE):
+            t = _strip_quotes(re.sub(r'\s+', ' ', t).strip().rstrip('.'))
+            if t and len(t) > 1:
+                remove_terms.append(t)
+
+    # Pattern 2: comma-segment "no X" / "no X and Y" (existing behaviour)
     for seg in re.split(r',\s*', instr):
         seg = seg.strip()
         m = re.match(r'^(?:has\s+)?no\s+(.+)$', seg, re.IGNORECASE)
         if m:
-            terms_str = m.group(1).strip()
-            for t in re.split(r'\s+and\s+', terms_str, flags=re.IGNORECASE):
-                t = re.sub(r'\s+', ' ', t).strip().rstrip('.')
+            for t in re.split(r'\s+and\s+', m.group(1), flags=re.IGNORECASE):
+                t = _strip_quotes(re.sub(r'\s+', ' ', t).strip().rstrip('.'))
                 if t and len(t) > 1:
                     remove_terms.append(t)
 

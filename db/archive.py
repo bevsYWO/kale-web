@@ -8,6 +8,7 @@ Tables used:
 
 from __future__ import annotations
 
+import time
 from datetime import date, datetime
 from typing import Optional
 
@@ -15,6 +16,18 @@ import pandas as pd
 import streamlit as st
 
 from db.client import get_client, is_configured
+
+
+def _retry(fn, retries=3, delay=2):
+    """Call fn(), retrying up to `retries` times on failure with a delay."""
+    for attempt in range(retries):
+        try:
+            return fn()
+        except Exception as e:
+            if attempt < retries - 1:
+                time.sleep(delay)
+            else:
+                raise
 
 
 # ==============================================================================
@@ -25,7 +38,7 @@ def _email_col(df: pd.DataFrame) -> Optional[str]:
     """Find the email column in a dataframe (case-insensitive)."""
     import re
     for col in df.columns:
-        if re.search(r'^email$|^email[\s_]?address$', col, re.IGNORECASE):
+        if re.search(r'email', col, re.IGNORECASE):
             return col
     return None
 
@@ -57,13 +70,15 @@ def append_to_archive(
     if not email_col:
         return 0, 0
 
-    # Build valid rows
+    # Build valid rows — deduplicate by email to avoid upsert conflicts
+    seen_set    = set()
     client_rows = []
     emails_seen = []
     for _, row in df.iterrows():
         email = str(row[email_col]).strip().lower()
-        if not email or "@" not in email:
+        if not email or "@" not in email or email in seen_set:
             continue
+        seen_set.add(email)
         row_data = {k: str(v) for k, v in row.items()}
         client_rows.append({
             "email":       email,
@@ -77,47 +92,41 @@ def append_to_archive(
     if not client_rows:
         return 0, len(df)
 
-    skipped = 0
+    CHUNK = 200  # safe limit to stay under Supabase URL length cap
 
-    # Batch upsert client_contacts — one request for the whole file
-    try:
-        sb.table("client_contacts").upsert(
-            client_rows, on_conflict="email,client"
-        ).execute()
-    except Exception:
-        skipped += len(client_rows)
-        return 0, skipped
+    # Batch upsert client_contacts in chunks
+    for i in range(0, len(client_rows), CHUNK):
+        chunk = client_rows[i:i + CHUNK]
+        _retry(lambda c=chunk: sb.table("client_contacts").upsert(
+            c, on_conflict="email,client"
+        ).execute())
 
-    # Fetch all existing master_contacts for these emails — one request
-    try:
-        existing_result = (
-            sb.table("master_contacts")
+    # Fetch existing master_contacts in chunks to avoid URL length limit
+    existing_map: dict = {}
+    for i in range(0, len(emails_seen), CHUNK):
+        chunk = emails_seen[i:i + CHUNK]
+        result = _retry(lambda c=chunk: sb.table("master_contacts")
             .select("id,email,clients,source_files")
-            .in_("email", emails_seen)
-            .execute()
-        )
-        existing_map = {
-            r["email"]: r for r in (existing_result.data or [])
-        }
-    except Exception:
-        return 0, skipped
+            .in_("email", c)
+            .execute())
+        for r in (result.data or []):
+            existing_map[r["email"]] = r
 
-    # Compute updates and inserts in memory
-    to_update = []
-    to_insert = []
+    # Compute upsert rows in memory (no id — email is the conflict key)
+    to_upsert = []
     for email in emails_seen:
         if email in existing_map:
             rec     = existing_map[email]
             clients = list(set((rec.get("clients") or []) + [client_name]))
             sources = list(set((rec.get("source_files") or []) + [source_file]))
-            to_update.append({
-                "id":           rec["id"],
+            to_upsert.append({
+                "email":        email,
                 "clients":      clients,
                 "last_seen":    today,
                 "source_files": sources,
             })
         else:
-            to_insert.append({
+            to_upsert.append({
                 "email":        email,
                 "clients":      [client_name],
                 "first_seen":   today,
@@ -125,21 +134,15 @@ def append_to_archive(
                 "source_files": [source_file],
             })
 
-    # Batch upsert master_contacts — one or two requests total
-    try:
-        if to_insert:
-            sb.table("master_contacts").upsert(
-                to_insert, on_conflict="email"
-            ).execute()
-        if to_update:
-            sb.table("master_contacts").upsert(
-                to_update, on_conflict="id"
-            ).execute()
-    except Exception as e:
-        skipped += len(to_update) + len(to_insert)
+    # Batch upsert master_contacts in chunks
+    for i in range(0, len(to_upsert), CHUNK):
+        chunk = to_upsert[i:i + CHUNK]
+        _retry(lambda c=chunk: sb.table("master_contacts").upsert(
+            c, on_conflict="email"
+        ).execute())
 
-    added = len(emails_seen) - skipped
-    return added, skipped
+    added = len(emails_seen)
+    return added, 0
 
 
 # ==============================================================================
@@ -161,17 +164,23 @@ def load_archive(
         return pd.DataFrame(columns=["email", "clients", "first_seen", "last_seen", "source_files"])
 
     try:
-        sb = get_client()
-        query = sb.table("master_contacts").select("*")
+        sb    = get_client()
+        PAGE  = 1000
+        rows  = []
+        start = 0
+        while True:
+            query = sb.table("master_contacts").select("*").range(start, start + PAGE - 1)
+            if date_from:
+                query = query.gte("first_seen", date_from)
+            if date_to:
+                query = query.lte("first_seen", date_to)
+            batch = query.execute().data or []
+            rows.extend(batch)
+            if len(batch) < PAGE:
+                break
+            start += PAGE
 
-        if date_from:
-            query = query.gte("first_seen", date_from)
-        if date_to:
-            query = query.lte("first_seen", date_to)
-
-        result = query.execute()
-        rows   = result.data or []
-        df     = pd.DataFrame(rows)
+        df = pd.DataFrame(rows)
 
         if df.empty:
             return df

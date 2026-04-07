@@ -28,8 +28,20 @@ def _load_file(uploaded) -> pd.DataFrame:
 
 
 def _find_keyword_col(df: pd.DataFrame):
+    # Prefer explicit keyword columns; avoid matching tier columns (e.g. "Tier Category")
     for col in df.columns:
-        if re.search(r'keyword|business[\s_]?type|category', col, re.IGNORECASE):
+        if re.search(r'keyword', col, re.IGNORECASE):
+            return col
+    for col in df.columns:
+        if re.search(r'^business[\s_]?type$', col, re.IGNORECASE):
+            return col
+    return None
+
+
+def _find_business_type_col(df: pd.DataFrame):
+    """Find a dedicated Business Type column for exclusion filtering."""
+    for col in df.columns:
+        if re.search(r'^business[\s_]?type$', col, re.IGNORECASE):
             return col
     return None
 
@@ -50,7 +62,7 @@ def _find_neighborhood_col(df: pd.DataFrame):
 
 def _find_tier_col(df: pd.DataFrame):
     for col in df.columns:
-        if re.search(r'^tier$', col, re.IGNORECASE):
+        if re.search(r'^tier$|^tier[\s_]?categor', col, re.IGNORECASE):
             return col
     return None
 
@@ -95,6 +107,28 @@ def render():
 
     st.subheader("N2 Tier Mapper")
     st.caption("Assigns Tier 1 / 2 / 3 / Do not email based on business type keyword.")
+
+    with st.expander("How to use this tab"):
+        st.markdown("""
+**What it does**
+Reads N2 lead lists and assigns each lead a Tier 1, 2, or 3 based on their business type — so the outreach team knows who to contact first.
+
+**How to use it**
+1. Upload your leads file.
+2. The tool assigns tiers automatically. Tier 1 = highest priority.
+3. If the file already has a Tier column, choose to keep it or re-map from keyword.
+4. Optionally filter by neighborhood and use **Randomize** to interleave T1→T2→T3 for balanced outreach.
+5. Select a platform and download.
+
+**Tiers**
+- **Tier 1** — Best converters (HVAC, plumbers, roofers, dentists)
+- **Tier 2** — Good fit (auto repair, hair salons, lawyers, gyms)
+- **Tier 3** — Lower priority (restaurants, barbers, gift shops)
+- **Do not email** — Skipped entirely (churches, non-profits, agencies)
+- **Unknown** — Business type not in the tier map; always removed from export
+
+Both *Do not email* and *Unknown* rows are filtered out and never exported — they appear in the **Removed** tab.
+        """)
 
     uploaded = st.file_uploader(
         "Upload CSV or Excel", type=["csv", "xlsx", "xls"], key="n2_upload"
@@ -153,18 +187,40 @@ def render():
                     df[tier_col] = "Unknown"
 
             # Split kept / removed
-            removed_mask    = df[tier_col] == "Do not email"
-            exclude_mask    = df.get(keyword_col, pd.Series(dtype=str)).str.lower().apply(
-                lambda v: any(ex in str(v).lower() for ex in BUSINESS_TYPE_EXCLUDE)
-            ) if keyword_col else pd.Series([False] * len(df))
+            removed_mask = df[tier_col].str.strip().str.lower().isin(
+                ["do not email", "unknown"]
+            )
+            exclude_mask = pd.Series([False] * len(df), index=df.index)
+            for _excol in [keyword_col, _find_business_type_col(df)]:
+                if _excol and _excol in df.columns:
+                    _kw = df[_excol].fillna("").str.lower()
+                    exclude_mask |= _kw.apply(
+                        lambda v: any(ex in v for ex in BUSINESS_TYPE_EXCLUDE)
+                    )
 
             full_remove = removed_mask | exclude_mask
             df_kept    = df[~full_remove].copy()
             df_removed = df[full_remove].copy()
 
+            # Add removal reason column
+            def _reason(idx):
+                if exclude_mask.get(idx, False):
+                    return f"Excluded business type"
+                return df.at[idx, tier_col]
+            df_removed.insert(0, "Removal Reason", df_removed.index.map(_reason))
+
             state["df_tiered"]  = df_kept
             state["df_removed"] = df_removed
             state["tier_col"]   = tier_col
+            if is_configured():
+                ec_auto = _find_email_col(df_kept)
+                try:
+                    added, _ = append_to_archive(df_kept, "N2", state.get("filename", "unknown"))
+                    st.info(f"Archive: {added} emails saved.")
+                except Exception as e:
+                    st.warning(f"Archive write failed: {e}")
+                if ec_auto:
+                    record_export(df_kept[ec_auto].dropna().tolist(), "N2", state.get("filename", "unknown"))
 
     if state["df_tiered"] is None:
         return
@@ -193,6 +249,7 @@ def render():
         {"label": "Unknown", "value": unk},
         {"label": "Do Not Email", "value": len(df_removed)},
         {"label": "Dupes in Archive", "value": dupes},
+        {"label": "New Leads", "value": len(df_kept) - dupes},
     ])
 
     # ── Neighborhood filter ───────────────────────────────────────────────────
@@ -221,25 +278,12 @@ def render():
         st.divider()
         st.markdown("**Export Kept**")
         platform = st.selectbox("Platform", EXPORT_PLATFORMS, key="n2_platform")
-        col1, col2 = st.columns(2)
-        with col1:
-            render_export_button(
-                display_df,
-                label=f"Download for {platform}",
-                file_name=f"n2_tiered_{platform.lower().replace(' ','_')}.csv",
-                key="n2_dl",
-            )
-        with col2:
-            if st.button("Archive to Supabase", key="n2_archive"):
-                if not is_configured():
-                    st.warning("Supabase not configured — skipping archive.")
-                else:
-                    fname = state.get("filename", "unknown")
-                    added, skipped = append_to_archive(display_df, "N2", fname)
-                    if ec:
-                        emails = display_df[ec].dropna().tolist()
-                        record_export(emails, platform, fname)
-                    st.success(f"Archived: {added} added, {skipped} skipped.")
+        render_export_button(
+            display_df,
+            label=f"Download for {platform}",
+            file_name=f"n2_tiered_{platform.lower().replace(' ','_')}.csv",
+            key="n2_dl",
+        )
 
     with removed_tab:
         st.caption(f"{len(df_removed):,} rows removed")

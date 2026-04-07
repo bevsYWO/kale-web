@@ -123,6 +123,32 @@ def render():
         "(remove rows, replace values, case transforms, etc.)."
     )
 
+    with st.expander("How to use this tab"):
+        st.markdown("""
+**What it does**
+A universal cleaner for any CSV. Always fixes encoding issues on every cell. Optionally lets you add per-column rules for filtering, replacing, or transforming values.
+
+**How to use it**
+1. Upload your CSV or Excel file.
+2. Optionally add per-column rules (or paste plain-English instructions).
+3. Click **Clean**.
+4. Review results in the Kept, Removed, and Diff View tabs.
+5. Select a platform and download.
+
+**Available rules**
+- **Remove rows containing** — removes rows with certain keywords
+- **Keep only rows containing** — keeps only rows with certain keywords
+- **Replace value** — replaces an exact value with another (format: `old → new`)
+- **Title Case / UPPERCASE / lowercase** — changes text case
+- **Apply city clean** — fixes invalid city values
+- **Apply name clean** — fixes placeholder first names
+- **Remove row if blank** — removes empty rows
+- **N/A → blank** — clears N/A, none, unknown, -- placeholders
+- **Keep only numeric range** — keeps rows within a number range (e.g. 1–5)
+
+**Tip:** Use the *Paste plain-English instructions* box to describe rules in plain text instead of building them manually. Example: `City - no streets` or `Rating - 1-5 only`.
+        """)
+
     uploaded = st.file_uploader(
         "Upload CSV or Excel", type=["csv", "xlsx", "xls"], key="general_upload"
     )
@@ -155,6 +181,9 @@ def render():
                 state["df_kept"]    = kept
                 state["df_removed"] = removed
                 state["changes"]    = changes
+                if is_configured():
+                    added, _ = append_to_archive(kept, "General", state.get("filename", "unknown"))
+                    st.info(f"Archive: {added} emails saved.")
             except Exception as e:
                 st.error(f"Error during cleaning: {e}")
                 return
@@ -181,25 +210,12 @@ def render():
 
         st.divider()
         platform = st.selectbox("Platform", EXPORT_PLATFORMS, key="gen_platform")
-        col1, col2 = st.columns(2)
-        with col1:
-            render_export_button(
-                df_kept,
-                label=f"Download Kept — {platform}",
-                file_name=f"general_kept_{platform.lower().replace(' ','_')}.csv",
-                key="gen_dl",
-            )
-        with col2:
-            if st.button("Archive to Supabase", key="gen_archive"):
-                if not is_configured():
-                    st.warning("Supabase not configured — skipping archive.")
-                else:
-                    fname = state.get("filename", "unknown")
-                    added, skipped = append_to_archive(df_kept, "General", fname)
-                    ec = _find_email_col(df_kept)
-                    if ec:
-                        record_export(df_kept[ec].dropna().tolist(), platform, fname)
-                    st.success(f"Archived: {added} added, {skipped} skipped.")
+        render_export_button(
+            df_kept,
+            label=f"Download Kept — {platform}",
+            file_name=f"general_kept_{platform.lower().replace(' ','_')}.csv",
+            key="gen_dl",
+        )
 
     with removed_tab:
         st.caption(f"{len(df_removed):,} rows removed")

@@ -45,6 +45,31 @@ def render():
     st.subheader("Riipen Data Cleaner")
     st.caption("Fixes encoding, names, company slash variants, and city subject-line values.")
 
+    with st.expander("How to use this tab"):
+        st.markdown("""
+**What it does**
+Cleans contact data exported from Clay before it goes into email campaigns.
+
+**How to use it**
+1. Upload your CSV or Excel file.
+2. The tool cleans it automatically — review the results in the tabs below.
+3. In **Review & Edit**, check the *In Clients* column to see if a contact has been seen before.
+4. Select a platform and filter (All / New only / Dupes only), then download.
+
+**What it fixes**
+- Garbled characters (MontrÃ©al → Montreal)
+- Placeholder first names (N/A → there, single letters removed)
+- Slash-merged names (Ian/Dorothy → resolved using email clues)
+- Subject line city — strips addresses, postal codes, metro area labels (e.g. *Greater Calgary Metropolitan Area* → *Calgary*)
+- Invalid values replaced with *Your city*
+- French university names with garbled accents
+- Excel error values (#NAME?, #VALUE!, #REF!, etc.)
+- Emojis, HTML entities, smart quotes, typographic dashes
+
+**Duplicate detection**
+Each contact is automatically checked against the master archive. The *In Clients* column shows where an email has been seen before. Use the **Filter** dropdown to export New only or Dupes only.
+        """)
+
     uploaded = st.file_uploader(
         "Upload CSV or Excel", type=["csv", "xlsx", "xls"], key="riipen_upload"
     )
@@ -59,6 +84,12 @@ def render():
                 state["df_clean"] = df_clean
                 state["changes"]  = changes
                 state["filename"] = uploaded.name
+                if is_configured():
+                    try:
+                        added, _ = append_to_archive(df_clean, "Riipen", uploaded.name)
+                        st.info(f"Archive: {added} emails saved.")
+                    except Exception as e:
+                        st.warning(f"Archive write failed: {e}")
             except Exception as e:
                 st.error(f"Error processing file: {e}")
                 return
@@ -76,11 +107,19 @@ def render():
     cols_affected = len(set(c[1] for c in changes))
     pct_affected  = round(cells_changed / max(total_rows, 1) * 100, 1)
 
+    ec = _email_col(df_clean)
+    if is_configured() and ec:
+        dupe_map = check_dupes(df_clean[ec].tolist(), "Riipen")
+        state["dupe_map"] = dupe_map
+    else:
+        state["dupe_map"] = {}
+    dupes = len(state["dupe_map"])
+
     render_stat_cards([
-        {"label": "Total Rows",      "value": f"{total_rows:,}"},
-        {"label": "Cells Changed",   "value": f"{cells_changed:,}"},
-        {"label": "% Rows Affected", "value": f"{pct_affected}%"},
-        {"label": "Columns Affected","value": cols_affected},
+        {"label": "Total Rows",       "value": f"{total_rows:,}"},
+        {"label": "New Leads",        "value": f"{total_rows - dupes:,}"},
+        {"label": "Dupes in Archive", "value": dupes},
+        {"label": "Cells Changed",    "value": f"{cells_changed:,}"},
     ])
 
     inner_tab1, inner_tab2, inner_tab3, inner_tab4 = st.tabs(
@@ -121,13 +160,11 @@ def render():
 
     # ── Review & Edit ────────────────────────────────────────────────────────
     with inner_tab3:
-        ec = _email_col(df_clean)
-
         # Show "In Clients" column if Supabase configured
         display_df = df_clean.copy()
         if is_configured() and ec:
             emails = display_df[ec].tolist()
-            dupe_map = check_dupes(emails, "Riipen")
+            dupe_map = state.get("dupe_map") or check_dupes(emails, "Riipen")
             platform_map = get_platforms_for_emails(emails)
             display_df["In Clients"] = display_df[ec].map(
                 lambda e: ", ".join(dupe_map.get(e.lower(), [])) or "-"
@@ -157,8 +194,7 @@ def render():
         export_df = state["df_clean"].copy()
 
         if is_configured() and ec and filter_opt != "All":
-            emails    = export_df[ec].tolist()
-            dupe_map  = check_dupes(emails, "Riipen")
+            dupe_map  = state.get("dupe_map") or check_dupes(export_df[ec].tolist(), "Riipen")
             seen_set  = set(dupe_map.keys())
             if filter_opt == "New only":
                 export_df = export_df[~export_df[ec].str.lower().isin(seen_set)]
@@ -167,25 +203,16 @@ def render():
 
         st.caption(f"{len(export_df):,} rows ready for export")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            render_export_button(
-                export_df,
-                label=f"Download for {platform}",
-                file_name=f"riipen_cleaned_{platform.lower().replace(' ','_')}.csv",
-                key="riipen_dl",
-            )
-        with col2:
-            if st.button("Archive to Supabase", key="riipen_archive"):
-                if not is_configured():
-                    st.warning("Supabase not configured — skipping archive.")
-                else:
-                    fname = state.get("filename", "unknown")
-                    added, skipped = append_to_archive(export_df, "Riipen", fname)
-                    if ec:
-                        emails = export_df[ec].dropna().tolist()
-                        record_export(emails, platform, fname)
-                    st.success(f"Archived: {added} added, {skipped} skipped.")
+        if is_configured() and ec:
+            emails = export_df[ec].dropna().tolist()
+            record_export(emails, platform, state.get("filename", "unknown"))
+
+        render_export_button(
+            export_df,
+            label=f"Download for {platform}",
+            file_name=f"riipen_cleaned_{platform.lower().replace(' ','_')}.csv",
+            key="riipen_dl",
+        )
 
     # ── Hotspots ─────────────────────────────────────────────────────────────
     with inner_tab4:

@@ -17,12 +17,33 @@ def render():
     st.subheader("Archive")
     st.caption("Contacts stored across all clients in Supabase master_contacts.")
 
+    with st.expander("How to use this tab"):
+        st.markdown("""
+**What it is**
+A running master record of every contact ever processed through the Kale Data Hub. It builds automatically — no extra steps needed.
+
+**How it works**
+Every time you clean a file through any tab (Riipen, N2, N2 Recruiting, Terraboost, or General), new contacts are automatically added here. Contacts are deduplicated by email — the same email is never stored twice for the same client.
+
+**How to use it**
+- **Client filter** — see contacts from one tab or all combined
+- **Search bar** — find a specific email or source file
+- **From / To** — filter by when a contact was first seen
+- **Export Filtered CSV** — download a CSV of whatever is currently showing
+        """)
+
     if not is_configured():
         st.warning(
             "Supabase is not configured. Add your credentials to "
             "`.streamlit/secrets.toml` to enable the archive."
         )
         return
+
+    # ── Refresh ───────────────────────────────────────────────────────────────
+    if st.button("Refresh", key="archive_refresh"):
+        load_archive.clear()
+        get_client_counts.clear()
+        st.rerun()
 
     # ── Filters ───────────────────────────────────────────────────────────────
     client_counts = get_client_counts()

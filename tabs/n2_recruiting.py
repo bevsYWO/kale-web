@@ -47,6 +47,28 @@ def render():
         "for N2 Recruiting campaign imports."
     )
 
+    with st.expander("How to use this tab"):
+        st.markdown("""
+**What it does**
+Cleans N2 Recruiting contact exports — fixes encoding issues, garbled first lines, and invalid city values.
+
+**How to use it**
+1. Upload your CSV or Excel file.
+2. The tool cleans it automatically — review results in the tabs below.
+3. In **Review & Edit**, check the *In Clients* column to see if a contact has been seen before.
+4. Select a platform and download.
+
+**What it fixes**
+- Garbled characters and mojibake (common in First Line values)
+- Invalid city values — inferred from address or zip code if city is blank/invalid
+- Encoding issues across all columns
+- First names with ~~ prefixes (~~Kumer → Kumer)
+- Placeholder first names (N/A, unknown, etc. → *there*)
+
+**Duplicate detection**
+Each contact is automatically checked against the master archive. The *In Clients* column shows where an email has been seen before.
+        """)
+
     uploaded = st.file_uploader(
         "Upload CSV or Excel", type=["csv", "xlsx", "xls"], key="n2r_upload"
     )
@@ -62,6 +84,9 @@ def render():
                 state["col_map"]  = col_map
                 state["changes"]  = changes
                 state["filename"] = uploaded.name
+                if is_configured():
+                    added, skipped = append_to_archive(df_clean, "N2 Recruiting", uploaded.name)
+                    st.info(f"Archive: {added} rows written, {skipped} skipped.")
             except Exception as e:
                 st.error(f"Error processing file: {e}")
                 return
@@ -79,11 +104,19 @@ def render():
     cols_affected = len(set(c[1] for c in changes))
     pct_affected  = round(cells_changed / max(total_rows, 1) * 100, 1)
 
+    ec = _find_email_col(df_clean)
+    if is_configured() and ec:
+        dupe_map = check_dupes(df_clean[ec].tolist(), "N2 Recruiting")
+        state["dupe_map"] = dupe_map
+    else:
+        state["dupe_map"] = {}
+    dupes = len(state["dupe_map"])
+
     render_stat_cards([
         {"label": "Total Rows",       "value": f"{total_rows:,}"},
+        {"label": "New Leads",        "value": f"{total_rows - dupes:,}"},
+        {"label": "Dupes in Archive", "value": dupes},
         {"label": "Cells Changed",    "value": f"{cells_changed:,}"},
-        {"label": "% Rows Affected",  "value": f"{pct_affected}%"},
-        {"label": "Columns Affected", "value": cols_affected},
     ])
 
     inner_tab1, inner_tab2, inner_tab3, inner_tab4 = st.tabs(
@@ -130,7 +163,7 @@ def render():
 
         if is_configured() and ec:
             emails       = display_df[ec].tolist()
-            dupe_map     = check_dupes(emails, "N2 Recruiting")
+            dupe_map     = state.get("dupe_map") or check_dupes(emails, "N2 Recruiting")
             platform_map = get_platforms_for_emails(emails)
             display_df["In Clients"]  = display_df[ec].map(
                 lambda e: ", ".join(dupe_map.get(e.lower(), [])) or "-"
@@ -154,27 +187,15 @@ def render():
         st.markdown("**Export**")
         platform = st.selectbox("Platform", EXPORT_PLATFORMS, key="n2r_platform")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            render_export_button(
-                state["df_clean"],
-                label=f"Download for {platform}",
-                file_name=f"n2_recruiting_{platform.lower().replace(' ','_')}.csv",
-                key="n2r_dl",
-            )
-        with col2:
-            if st.button("Archive to Supabase", key="n2r_archive"):
-                if not is_configured():
-                    st.warning("Supabase not configured — skipping archive.")
-                else:
-                    fname = state.get("filename", "unknown")
-                    added, skipped = append_to_archive(
-                        state["df_clean"], "N2 Recruiting", fname
-                    )
-                    if ec:
-                        emails = state["df_clean"][ec].dropna().tolist()
-                        record_export(emails, platform, fname)
-                    st.success(f"Archived: {added} added, {skipped} skipped.")
+        if is_configured() and ec:
+            record_export(state["df_clean"][ec].dropna().tolist(), platform, state.get("filename", "unknown"))
+
+        render_export_button(
+            state["df_clean"],
+            label=f"Download for {platform}",
+            file_name=f"n2_recruiting_{platform.lower().replace(' ','_')}.csv",
+            key="n2r_dl",
+        )
 
     # ── Hotspots ──────────────────────────────────────────────────────────────
     with inner_tab4:
