@@ -11,7 +11,7 @@ from core.cleaner import clean_dataframe, compute_diff, build_summary, build_hot
 from components.stat_cards import render_stat_cards
 from components.diff_viewer import render_diff_table
 from components.export_button import render_export_button, build_filename
-from db.archive import append_to_archive, check_dupes
+from db.archive import append_to_archive
 from db.platform_history import get_platforms_for_emails, record_export
 from db.client import is_configured
 
@@ -194,14 +194,13 @@ Each contact is automatically checked against the master archive. The *In Client
         st.divider()
         st.markdown("**Export**")
 
-        platform = st.selectbox("Platform", EXPORT_PLATFORMS, key="riipen_platform")
+        platform   = st.selectbox("Platform", EXPORT_PLATFORMS, key="riipen_platform")
         filter_opt = st.selectbox("Filter", FILTER_OPTIONS, key="riipen_filter")
 
         export_df = state["df_clean"].copy()
-
-        if is_configured() and ec and filter_opt != "All":
-            dupe_map  = state.get("dupe_map") or check_dupes(export_df[ec].tolist(), "Riipen")
-            seen_set  = set(dupe_map.keys())
+        if ec and filter_opt != "All":
+            dupe_map = state.get("dupe_map") or {}
+            seen_set = set(dupe_map.keys())
             if filter_opt == "New only":
                 export_df = export_df[~export_df[ec].str.lower().isin(seen_set)]
             elif filter_opt == "Dupes only":
@@ -209,16 +208,14 @@ Each contact is automatically checked against the master archive. The *In Client
 
         st.caption(f"{len(export_df):,} rows ready for export")
 
-        if is_configured() and ec:
-            emails = export_df[ec].dropna().tolist()
-            record_export(emails, platform, state.get("filename", "unknown"))
-
-        render_export_button(
+        clicked = render_export_button(
             export_df,
             label=f"Download for {platform}",
             file_name=build_filename("riipen_cleaned", platform),
             key="riipen_dl",
         )
+        if clicked and is_configured() and ec:
+            record_export(export_df[ec].dropna().tolist(), platform, state.get("filename", "unknown"))
 
     # ── Hotspots ─────────────────────────────────────────────────────────────
     with inner_tab4:

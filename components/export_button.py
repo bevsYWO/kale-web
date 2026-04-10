@@ -26,10 +26,10 @@ def render_export_button(
     label: str = "Download CSV",
     file_name: str = "export.csv",
     key: str = "export_btn",
-) -> None:
-    """Render a styled CSV download button."""
+) -> bool:
+    """Render a styled CSV download button. Returns True when clicked."""
     csv = df.to_csv(index=False).encode("utf-8")
-    st.download_button(
+    return st.download_button(
         label=label,
         data=csv,
         file_name=file_name,

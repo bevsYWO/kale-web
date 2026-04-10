@@ -15,6 +15,7 @@ from db.platform_history import get_platforms_for_emails, record_export
 from db.client import is_configured
 
 EXPORT_PLATFORMS = ["Instantly", "EmailBison", "Personal Bison"]
+FILTER_OPTIONS   = ["All", "New only", "Dupes only"]
 
 
 def _load_file(uploaded) -> pd.DataFrame:
@@ -191,17 +192,30 @@ Each contact is automatically checked against the master archive. The *In Client
 
         st.divider()
         st.markdown("**Export**")
-        platform = st.selectbox("Platform", EXPORT_PLATFORMS, key="n2r_platform")
 
-        if is_configured() and ec:
-            record_export(state["df_clean"][ec].dropna().tolist(), platform, state.get("filename", "unknown"))
+        platform   = st.selectbox("Platform", EXPORT_PLATFORMS, key="n2r_platform")
+        filter_opt = st.selectbox("Filter", FILTER_OPTIONS, key="n2r_filter")
 
-        render_export_button(
-            state["df_clean"],
+        export_df = state["df_clean"].copy()
+        ec_export = _find_email_col(export_df)
+        if ec_export and filter_opt != "All":
+            dupe_map = state.get("dupe_map") or {}
+            seen_set = set(dupe_map.keys())
+            if filter_opt == "New only":
+                export_df = export_df[~export_df[ec_export].str.lower().isin(seen_set)]
+            elif filter_opt == "Dupes only":
+                export_df = export_df[export_df[ec_export].str.lower().isin(seen_set)]
+
+        st.caption(f"{len(export_df):,} rows ready for export")
+
+        clicked = render_export_button(
+            export_df,
             label=f"Download for {platform}",
             file_name=build_filename("n2_recruiting", platform),
             key="n2r_dl",
         )
+        if clicked and is_configured() and ec_export:
+            record_export(export_df[ec_export].dropna().tolist(), platform, state.get("filename", "unknown"))
 
     # ── Hotspots ──────────────────────────────────────────────────────────────
     with inner_tab4:
