@@ -8,11 +8,12 @@ import streamlit as st
 from core.terraboost_cleaner import clean_terraboost_dataframe, TB_EXPORT_RENAME
 from components.stat_cards import render_stat_cards
 from components.export_button import render_export_button, build_filename
-from db.archive import append_to_archive
+from db.archive import append_to_archive, check_dupes
 from db.platform_history import record_export
 from db.client import is_configured
 
 EXPORT_PLATFORMS = ["Instantly", "EmailBison", "Personal Bison"]
+FILTER_OPTIONS   = ["All", "New only", "Dupes only"]
 
 
 def _load_file(uploaded) -> pd.DataFrame:
@@ -75,6 +76,9 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
                 state["col_map"]    = cm
                 state["filename"]   = uploaded.name
                 if is_configured():
+                    ec_tmp = _find_email_col(kept)
+                    if ec_tmp:
+                        state["dupe_map"] = check_dupes(kept[ec_tmp].tolist(), "Terraboost")
                     user = st.session_state.get("user_name", "")
                     src  = f"{uploaded.name} ({user})" if user else uploaded.name
                     added, _ = append_to_archive(kept, "Terraboost", src)
@@ -99,12 +103,23 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
         clean_stars = df_kept[cm["google_stars"]].fillna("") if cm["google_stars"] in df_kept.columns else orig_stars
         stars_fixed = int((orig_stars[:len(clean_stars)] != clean_stars).sum())
 
+    ec    = _find_email_col(df_kept)
+    dupes = len(state.get("dupe_map") or {})
+
     render_stat_cards([
-        {"label": "Total Rows",    "value": f"{len(df_orig):,}"},
-        {"label": "Kept",          "value": f"{len(df_kept):,}"},
-        {"label": "Removed",       "value": f"{len(df_removed):,}"},
-        {"label": "Stars Cleaned", "value": stars_fixed},
+        {"label": "Total Rows",       "value": f"{len(df_orig):,}"},
+        {"label": "Kept",             "value": f"{len(df_kept):,}"},
+        {"label": "Removed",          "value": f"{len(df_removed):,}"},
+        {"label": "New Leads",        "value": f"{len(df_kept) - dupes:,}"},
+        {"label": "Dupes in Archive", "value": dupes},
+        {"label": "Stars Cleaned",    "value": stars_fixed},
     ])
+
+    if len(df_kept) > 0 and dupes / len(df_kept) > 0.5:
+        st.warning(
+            f"⚠️ **{dupes:,} of {len(df_kept):,} kept leads ({dupes/len(df_kept):.0%}) are already in the archive.** "
+            "Consider using the New only filter before exporting."
+        )
 
     kept_tab, removed_tab = st.tabs(["Kept", "Removed"])
 
@@ -114,14 +129,28 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
 
         st.divider()
         st.markdown("**Export**")
-        platform = st.selectbox("Platform", EXPORT_PLATFORMS, key="tb_platform")
+        platform   = st.selectbox("Platform", EXPORT_PLATFORMS, key="tb_platform")
+        filter_opt = st.selectbox("Filter", FILTER_OPTIONS, key="tb_filter")
 
-        render_export_button(
-            df_kept,
+        export_df = df_kept.copy()
+        if ec and filter_opt != "All":
+            dupe_map = state.get("dupe_map") or {}
+            seen_set = set(dupe_map.keys())
+            if filter_opt == "New only":
+                export_df = export_df[~export_df[ec].str.lower().isin(seen_set)]
+            elif filter_opt == "Dupes only":
+                export_df = export_df[export_df[ec].str.lower().isin(seen_set)]
+
+        st.caption(f"{len(export_df):,} rows ready for export")
+
+        clicked = render_export_button(
+            export_df,
             label=f"Download Kept — {platform}",
             file_name=build_filename("terraboost_kept", platform),
             key="tb_dl",
         )
+        if clicked and is_configured() and ec:
+            record_export(export_df[ec].dropna().tolist(), platform, state.get("filename", "unknown"))
 
     with removed_tab:
         st.caption(f"{len(df_removed):,} rows removed")

@@ -16,11 +16,12 @@ from core.cleaner import compute_diff, build_summary
 from components.stat_cards import render_stat_cards
 from components.diff_viewer import render_diff_table
 from components.export_button import render_export_button, build_filename
-from db.archive import append_to_archive
+from db.archive import append_to_archive, check_dupes
 from db.platform_history import record_export
 from db.client import is_configured
 
 EXPORT_PLATFORMS = ["Instantly", "EmailBison", "Personal Bison"]
+FILTER_OPTIONS   = ["All", "New only", "Dupes only"]
 
 
 def _load_file(uploaded) -> pd.DataFrame:
@@ -182,6 +183,9 @@ A universal cleaner for any CSV. Always fixes encoding issues on every cell. Opt
                 state["df_removed"] = removed
                 state["changes"]    = changes
                 if is_configured():
+                    ec_tmp = _find_email_col(kept)
+                    if ec_tmp:
+                        state["dupe_map"] = check_dupes(kept[ec_tmp].tolist(), "General")
                     user = st.session_state.get("user_name", "")
                     src  = f"{state.get('filename', 'unknown')} ({user})" if user else state.get("filename", "unknown")
                     added, _ = append_to_archive(kept, "General", src)
@@ -197,12 +201,23 @@ A universal cleaner for any CSV. Always fixes encoding issues on every cell. Opt
     df_removed = state["df_removed"]
     changes    = state["changes"]
 
+    ec    = _find_email_col(df_kept)
+    dupes = len(state.get("dupe_map") or {})
+
     render_stat_cards([
-        {"label": "Total Rows",  "value": f"{len(state['df_orig']):,}"},
-        {"label": "Kept",        "value": f"{len(df_kept):,}"},
-        {"label": "Removed",     "value": f"{len(df_removed):,}"},
-        {"label": "Cells Fixed", "value": f"{len(changes):,}"},
+        {"label": "Total Rows",        "value": f"{len(state['df_orig']):,}"},
+        {"label": "Kept",              "value": f"{len(df_kept):,}"},
+        {"label": "Removed",           "value": f"{len(df_removed):,}"},
+        {"label": "New Leads",         "value": f"{len(df_kept) - dupes:,}"},
+        {"label": "Dupes in Archive",  "value": dupes},
+        {"label": "Cells Fixed",       "value": f"{len(changes):,}"},
     ])
+
+    if len(df_kept) > 0 and dupes / len(df_kept) > 0.5:
+        st.warning(
+            f"⚠️ **{dupes:,} of {len(df_kept):,} kept leads ({dupes/len(df_kept):.0%}) are already in the archive.** "
+            "Consider using the New only filter before exporting."
+        )
 
     kept_tab, removed_tab, diff_tab = st.tabs(["Kept", "Removed", "Diff View"])
 
@@ -211,13 +226,29 @@ A universal cleaner for any CSV. Always fixes encoding issues on every cell. Opt
         st.dataframe(df_kept, use_container_width=True, hide_index=True)
 
         st.divider()
-        platform = st.selectbox("Platform", EXPORT_PLATFORMS, key="gen_platform")
-        render_export_button(
-            df_kept,
+        st.markdown("**Export**")
+        platform   = st.selectbox("Platform", EXPORT_PLATFORMS, key="gen_platform")
+        filter_opt = st.selectbox("Filter", FILTER_OPTIONS, key="gen_filter")
+
+        export_df = df_kept.copy()
+        if ec and filter_opt != "All":
+            dupe_map = state.get("dupe_map") or {}
+            seen_set = set(dupe_map.keys())
+            if filter_opt == "New only":
+                export_df = export_df[~export_df[ec].str.lower().isin(seen_set)]
+            elif filter_opt == "Dupes only":
+                export_df = export_df[export_df[ec].str.lower().isin(seen_set)]
+
+        st.caption(f"{len(export_df):,} rows ready for export")
+
+        clicked = render_export_button(
+            export_df,
             label=f"Download Kept — {platform}",
             file_name=build_filename("general_kept", platform),
             key="gen_dl",
         )
+        if clicked and is_configured() and ec:
+            record_export(export_df[ec].dropna().tolist(), platform, state.get("filename", "unknown"))
 
     with removed_tab:
         st.caption(f"{len(df_removed):,} rows removed")

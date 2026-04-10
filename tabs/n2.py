@@ -291,15 +291,29 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
         selected_tiers  = st.multiselect(
             "Export tiers", available_tiers, default=default_tiers, key="n2_tier_export_filter"
         )
+        filter_opt = st.selectbox(
+            "Filter", ["All", "New only", "Dupes only"], key="n2_lead_filter"
+        )
+
         export_df = display_df[display_df[tier_col].isin(selected_tiers)] if selected_tiers else display_df
+        if ec and filter_opt != "All":
+            dupe_map = state.get("dupe_map") or {}
+            seen_set = set(dupe_map.keys())
+            if filter_opt == "New only":
+                export_df = export_df[~export_df[ec].str.lower().isin(seen_set)]
+            elif filter_opt == "Dupes only":
+                export_df = export_df[export_df[ec].str.lower().isin(seen_set)]
+
         st.caption(f"{len(export_df):,} rows ready for export")
 
-        render_export_button(
+        clicked = render_export_button(
             export_df,
             label=f"Download for {platform}",
             file_name=build_filename("n2_tiered", platform),
             key="n2_dl",
         )
+        if clicked and is_configured() and ec:
+            record_export(export_df[ec].dropna().tolist(), platform, state.get("filename", "unknown"))
 
     with removed_tab:
         st.caption(f"{len(df_removed):,} rows removed")
