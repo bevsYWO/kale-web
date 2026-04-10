@@ -207,17 +207,42 @@ def load_archive(
 # ==============================================================================
 
 @st.cache_data(ttl=300)
+def get_total_contact_count() -> int:
+    """Return total unique contacts in master_contacts (exact COUNT query)."""
+    if not is_configured():
+        return 0
+    try:
+        sb     = get_client()
+        result = sb.table("master_contacts").select("*", count="exact").limit(0).execute()
+        return result.count or 0
+    except Exception:
+        return 0
+
+
+@st.cache_data(ttl=300)
 def get_client_counts() -> dict:
-    """Count contacts per client from master_contacts."""
+    """Count contacts per client from master_contacts (paginated)."""
     if not is_configured():
         return {}
     try:
         sb     = get_client()
-        result = sb.table("master_contacts").select("clients").execute()
+        PAGE   = 1000
         counts: dict[str, int] = {}
-        for row in result.data or []:
-            for c in (row.get("clients") or []):
-                counts[c] = counts.get(c, 0) + 1
+        start  = 0
+        while True:
+            batch = (
+                sb.table("master_contacts")
+                .select("clients")
+                .range(start, start + PAGE - 1)
+                .execute()
+                .data or []
+            )
+            for row in batch:
+                for c in (row.get("clients") or []):
+                    counts[c] = counts.get(c, 0) + 1
+            if len(batch) < PAGE:
+                break
+            start += PAGE
         return counts
     except Exception:
         return {}
@@ -229,23 +254,28 @@ def get_client_counts() -> dict:
 
 def check_dupes(emails: list[str], client_name: str) -> dict[str, list[str]]:
     """
-    Return {email: [clients where seen]} for each email in the list.
-    Only returns emails that already exist in master_contacts.
+    Return {email: [clients where seen]} for each email already in master_contacts.
+    Batched to avoid Supabase URL length limits on large lists.
+    Call this BEFORE append_to_archive so new contacts aren't treated as dupes.
     """
     if not is_configured() or not emails:
         return {}
     try:
-        sb      = get_client()
-        lower   = [e.lower() for e in emails if e]
-        result  = (
-            sb.table("master_contacts")
-            .select("email,clients")
-            .in_("email", lower)
-            .execute()
-        )
-        return {
-            row["email"]: row.get("clients", [])
-            for row in (result.data or [])
-        }
+        sb     = get_client()
+        lower  = [e.lower() for e in emails if e]
+        CHUNK  = 200
+        result_map: dict[str, list[str]] = {}
+        for i in range(0, len(lower), CHUNK):
+            chunk = lower[i:i + CHUNK]
+            rows  = (
+                sb.table("master_contacts")
+                .select("email,clients")
+                .in_("email", chunk)
+                .execute()
+                .data or []
+            )
+            for row in rows:
+                result_map[row["email"]] = row.get("clients", [])
+        return result_map
     except Exception:
         return {}

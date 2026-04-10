@@ -85,6 +85,9 @@ Each contact is automatically checked against the master archive. The *In Client
                 state["changes"]  = changes
                 state["filename"] = uploaded.name
                 if is_configured():
+                    ec_tmp = _find_email_col(df_clean)
+                    if ec_tmp:
+                        state["dupe_map"] = check_dupes(df_clean[ec_tmp].tolist(), "N2 Recruiting")
                     user = st.session_state.get("user_name", "")
                     src  = f"{uploaded.name} ({user})" if user else uploaded.name
                     added, skipped = append_to_archive(df_clean, "N2 Recruiting", src)
@@ -106,13 +109,8 @@ Each contact is automatically checked against the master archive. The *In Client
     cols_affected = len(set(c[1] for c in changes))
     pct_affected  = round(cells_changed / max(total_rows, 1) * 100, 1)
 
-    ec = _find_email_col(df_clean)
-    if is_configured() and ec:
-        dupe_map = check_dupes(df_clean[ec].tolist(), "N2 Recruiting")
-        state["dupe_map"] = dupe_map
-    else:
-        state["dupe_map"] = {}
-    dupes = len(state["dupe_map"])
+    ec    = _find_email_col(df_clean)
+    dupes = len(state.get("dupe_map") or {})
 
     render_stat_cards([
         {"label": "Total Rows",       "value": f"{total_rows:,}"},
@@ -171,7 +169,7 @@ Each contact is automatically checked against the master archive. The *In Client
 
         if is_configured() and ec:
             emails       = display_df[ec].tolist()
-            dupe_map     = state.get("dupe_map") or check_dupes(emails, "N2 Recruiting")
+            dupe_map     = state.get("dupe_map") or {}
             platform_map = get_platforms_for_emails(emails)
             display_df["In Clients"]  = display_df[ec].map(
                 lambda e: ", ".join(dupe_map.get(e.lower(), [])) or "-"

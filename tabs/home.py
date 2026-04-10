@@ -4,7 +4,7 @@ tabs/home.py — Home / dashboard tab.
 
 import streamlit as st
 
-from db.archive import get_client_counts
+from db.archive import get_client_counts, get_total_contact_count
 from db.client import is_configured
 from components.stat_cards import render_stat_cards
 
@@ -78,10 +78,11 @@ def render():
         with col_btn:
             if st.button("Refresh", key="home_refresh"):
                 get_client_counts.clear()
+                get_total_contact_count.clear()
                 st.rerun()
         try:
             counts = get_client_counts()
-            total  = sum(counts.values())
+            total  = get_total_contact_count()
             cards  = [{"label": "Total Contacts Archived", "value": f"{total:,}"}]
             for client, count in sorted(counts.items(), key=lambda x: -x[1]):
                 cards.append({"label": client, "value": f"{count:,}"})

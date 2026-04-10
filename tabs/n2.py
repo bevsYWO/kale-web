@@ -214,6 +214,8 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
             state["tier_col"]   = tier_col
             if is_configured():
                 ec_auto = _find_email_col(df_kept)
+                if ec_auto:
+                    state["dupe_map"] = check_dupes(df_kept[ec_auto].tolist(), "N2")
                 try:
                     user = st.session_state.get("user_name", "")
                     src  = f"{state.get('filename', 'unknown')} ({user})" if user else state.get("filename", "unknown")
@@ -237,12 +239,8 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
     t3 = int((df_kept[tier_col] == "3").sum())
     unk = int((df_kept[tier_col] == "Unknown").sum())
 
-    ec = _find_email_col(df_kept)
-    dupes = 0
-    if is_configured() and ec:
-        emails   = df_kept[ec].tolist()
-        dupe_map = check_dupes(emails, "N2")
-        dupes    = len(dupe_map)
+    ec    = _find_email_col(df_kept)
+    dupes = len(state.get("dupe_map") or {})
 
     render_stat_cards([
         {"label": "Tier 1", "value": t1},
