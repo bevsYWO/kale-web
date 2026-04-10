@@ -10,6 +10,8 @@ from core.cleaner import (
     clean_cell,
     fix_company_slash,
     fix_first_name,
+    fix_last_name,
+    _fix_name_encoding,
     _STREET_SUFFIX_RE,
     _POSTAL_CODE_RE,
     _find_col,
@@ -154,6 +156,7 @@ def _detect_recruiting_columns(df):
     cols = list(df.columns)
     return {
         'first_name': _find_col(cols, r'^first[\s_]?name$'),
+        'last_name':  _find_col(cols, r'^last[\s_]?name$'),
         'first_line': _find_col(cols, r'^first[\s_]?line$'),
         'city':       _find_col(cols, r'^city$'),
         'zip':        _find_col(cols, r'^zip[\s_]?code$', r'^zip$', r'^postal[\s_]?code$'),
@@ -188,7 +191,7 @@ def clean_recruiting_dataframe(df):
         df[col] = df[col].fillna('').astype(str)
     cm = _detect_recruiting_columns(df)
 
-    # Step 1 — First Name
+    # Step 1 — First Name (fix_first_name handles mojibake fix + accent stripping internally)
     if cm['first_name']:
         df[cm['first_name']] = df.apply(
             lambda r: fix_first_name(
@@ -196,6 +199,12 @@ def clean_recruiting_dataframe(df):
                 r[cm['email']]    if cm['email']    else '',
                 r[cm['linkedin']] if cm['linkedin'] else '',
             ), axis=1)
+
+    # Step 1b — Last Name (mojibake fix + strip accents to plain ASCII)
+    if cm['last_name']:
+        df[cm['last_name']] = df[cm['last_name']].apply(
+            lambda x: fix_last_name(_fix_name_encoding(x))
+        )
 
     # Step 2 — First Line
     if cm['first_line']:

@@ -27,6 +27,31 @@ def _fix_mojibake(text):
     except (UnicodeDecodeError, UnicodeEncodeError):
         return text
 
+def _fix_name_encoding(text):
+    """Fix encoding in a name: decode mojibake then strip to plain ASCII letters (Ã© → é → e)."""
+    text = _fix_ctrl_digit(text)
+    text = _remove_control_chars(text)
+    text = _fix_mojibake(text)   # Ã© → é  (mojibake: latin-1 bytes read as UTF-8 chars)
+    text = _strip_accents(text)  # é → e, ü → u, ñ → n, etc.
+    text = _decode_html(text)    # &eacute; → e (after strip_accents handles any remaining)
+    text = _fix_typographic(text)
+    return text.strip()
+
+# Detects still-garbled sequences that survive the mojibake fix attempt
+_GARBLED_RE = re.compile(r'Ã[^\s]|Â[^\s]|â€')
+
+def _name_from_email(email):
+    """Extract a candidate first name from an email prefix (e.g. john.doe@ → John)."""
+    if not email or '@' not in email:
+        return ''
+    prefix = email.split('@')[0]
+    prefix = re.sub(r'\d+$', '', prefix)
+    parts = re.split(r'[._\-+]', prefix)
+    parts = [p for p in parts if len(p) >= 2 and re.match(r'^[A-Za-z]+$', p)]
+    if parts:
+        return parts[0].capitalize()
+    return ''
+
 def _strip_accents(text):
     nfd = unicodedata.normalize('NFD', text)
     return ''.join(c for c in nfd if unicodedata.category(c) != 'Mn')
@@ -249,20 +274,20 @@ _CONJUNCTIONS_RE = re.compile(
 )
 
 def fix_first_name(first, email='', linkedin=''):
-    v = first.strip()
+    v = _fix_name_encoding(str(first))   # Ã© → é → e (mojibake fix + strip accents to plain ASCII)
     v = re.sub(r"^['\u2018\u2019\"`]+", '', v).strip()
     v = re.sub(r"^~+", '', v).strip()
     if v:
         v = v[0].upper() + v[1:]
     if not v:
-        return 'there'
+        return _name_from_email(email) or 'there'
     lower_v = v.lower()
     if lower_v in _PLACEHOLDER_NAMES:
         return 'there'
     if re.fullmatch(r'[A-Za-z]', v):
-        return 'there'
-    if '?' in v:
-        return 'there'
+        return _name_from_email(email) or 'there'
+    if '?' in v or _GARBLED_RE.search(v):
+        return _name_from_email(email) or 'there'
     if re.search(r'\d', v):
         return 'there'
     if '/' in v:
