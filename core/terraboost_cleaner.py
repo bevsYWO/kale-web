@@ -96,6 +96,8 @@ def clean_company_name(value):
     v = _fix_name_encoding(str(value))  # mojibake fix + accent strip → plain ASCII
     if not v or _TB_PLACEHOLDER_RE.match(v):
         return None
+    # Remove any remaining non-ASCII characters (CJK, Arabic, etc.)
+    v = re.sub(r'[^\x00-\x7F]+', ' ', v)
     # Replace special characters not typical in company names
     v = _TB_SPECIAL_CHAR_RE.sub(' ', v)
     # Collapse extra whitespace
