@@ -8,7 +8,7 @@ import re
 
 import pandas as pd
 
-from core.cleaner import _find_col
+from core.cleaner import _find_col, _fix_name_encoding
 
 # ==============================================================================
 # CONSTANTS
@@ -56,16 +56,16 @@ def normalize_shop_name(value):
 def clean_company_name(value):
     """
     Clean a company name:
+    - Fix mojibake encoding (Ã© → é)
+    - Strip accents to plain ASCII (é → e, ñ → n)
     - Remove control/non-printable characters
     - Replace stray special characters with a space
     - Collapse extra whitespace
     Returns cleaned string, or None if the result is blank/garbled.
     """
-    v = str(value).strip()
+    v = _fix_name_encoding(str(value))  # mojibake fix + accent strip → plain ASCII
     if not v or _TB_PLACEHOLDER_RE.match(v):
         return None
-    # Strip control characters
-    v = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', v)
     # Replace special characters not typical in company names
     v = _TB_SPECIAL_CHAR_RE.sub(' ', v)
     # Collapse extra whitespace
@@ -104,18 +104,23 @@ def _detect_terraboost_columns(df):
 
 def clean_terraboost_dataframe(df):
     """
-    Apply Steps 1-3 to a Terraboost CSV.
-    Returns (kept_df, removed_df, col_map).
+    Apply Steps 1-4 to a Terraboost CSV.
+    Returns (kept_df, removed_df, changed_df, col_map).
+    changed_df contains kept rows that had values modified in place,
+    with a '_changes' column describing what was altered.
     """
     df = df.copy()
     for col in df.columns:
         df[col] = df[col].fillna('').astype(str)
     cm = _detect_terraboost_columns(df)
 
-    removed_rows = []   # list of (original_series, reason)
+    removed_rows = []           # list of (original_series, reason)
     kept_mask    = [True] * len(df)
+    change_log   = {}           # idx -> list of change description strings
 
     for idx, row in df.iterrows():
+        row_changes = []
+
         # Step 1 — shop_name must be a valid chain
         if cm['shop_name']:
             canonical = normalize_shop_name(row[cm['shop_name']])
@@ -124,6 +129,8 @@ def clean_terraboost_dataframe(df):
                     (row, f"Invalid store: {row[cm['shop_name']]!r}"))
                 kept_mask[idx] = False
                 continue
+            if canonical != row[cm['shop_name']]:
+                row_changes.append(f"Store name: {row[cm['shop_name']]!r} → {canonical!r}")
             df.at[idx, cm['shop_name']] = canonical
 
         # Step 3 — business_category must not be blank / N/A
@@ -134,21 +141,31 @@ def clean_terraboost_dataframe(df):
                 kept_mask[idx] = False
                 continue
 
-        # Step 4 — company_name: clean special chars; remove if blank/garbled
+        # Step 4 — company_name: fix encoding/accents, clean special chars; remove if garbled
         if cm['company_name']:
-            cn = clean_company_name(row[cm['company_name']])
+            orig_cn = row[cm['company_name']]
+            cn = clean_company_name(orig_cn)
             if cn is None:
                 removed_rows.append(
-                    (row, f"Garbled/invalid company name: {row[cm['company_name']]!r}"))
+                    (row, f"Garbled/invalid company name: {orig_cn!r}"))
                 kept_mask[idx] = False
                 continue
+            if cn != orig_cn:
+                row_changes.append(f"Company name: {orig_cn!r} → {cn!r}")
             df.at[idx, cm['company_name']] = cn
 
-    # Step 2 — google_stars: clean in place (no row removal)
+        if row_changes:
+            change_log[idx] = row_changes
+
+    # Step 2 — google_stars: clean in place (no row removal), track changes
     kept_df = df[kept_mask].copy()
     if cm['google_stars']:
-        kept_df[cm['google_stars']] = kept_df[cm['google_stars']].apply(
-            clean_google_stars)
+        orig_stars_col = kept_df[cm['google_stars']].copy()
+        kept_df[cm['google_stars']] = kept_df[cm['google_stars']].apply(clean_google_stars)
+        for idx2 in kept_df.index:
+            if kept_df.at[idx2, cm['google_stars']] != orig_stars_col.at[idx2]:
+                change_log.setdefault(idx2, []).append(
+                    f"Stars: {orig_stars_col.at[idx2]!r} → {kept_df.at[idx2, cm['google_stars']]!r}")
 
     # Build removed dataframe
     if removed_rows:
@@ -163,4 +180,12 @@ def clean_terraboost_dataframe(df):
         kept_df[col] = kept_df[col].apply(
             lambda x: re.sub(r' {2,}', ' ', str(x)).strip())
 
-    return kept_df, removed_df, cm
+    # Build changed dataframe (subset of kept rows that had in-place edits)
+    changed_indices = [idx for idx in kept_df.index if idx in change_log]
+    if changed_indices:
+        changed_df = kept_df.loc[changed_indices].copy()
+        changed_df.insert(0, '_changes', ['; '.join(change_log[i]) for i in changed_indices])
+    else:
+        changed_df = pd.DataFrame(columns=['_changes'] + list(kept_df.columns))
+
+    return kept_df, removed_df, changed_df, cm

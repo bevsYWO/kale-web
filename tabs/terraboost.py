@@ -36,6 +36,7 @@ def render():
         "df_orig":    None,
         "df_kept":    None,
         "df_removed": None,
+        "df_changed": None,
         "col_map":    {},
         "filename":   None,
     })
@@ -70,10 +71,11 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
         with st.spinner("Cleaning..."):
             try:
                 df_orig = _load_file(uploaded)
-                kept, removed, cm = clean_terraboost_dataframe(df_orig)
+                kept, removed, changed, cm = clean_terraboost_dataframe(df_orig)
                 state["df_orig"]    = df_orig
                 state["df_kept"]    = kept
                 state["df_removed"] = removed
+                state["df_changed"] = changed
                 state["col_map"]    = cm
                 state["filename"]   = uploaded.name
                 if is_configured():
@@ -95,6 +97,7 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
     df_orig    = state["df_orig"]
     df_kept    = state["df_kept"]
     df_removed = state["df_removed"]
+    df_changed = state["df_changed"]
     cm         = state["col_map"]
 
     # Stars cleaned count
@@ -111,6 +114,7 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
         {"label": "Total Rows",       "value": f"{len(df_orig):,}"},
         {"label": "Kept",             "value": f"{len(df_kept):,}"},
         {"label": "Removed",          "value": f"{len(df_removed):,}"},
+        {"label": "Changed",          "value": f"{len(df_changed):,}"},
         {"label": "New Leads",        "value": f"{len(df_kept) - dupes:,}"},
         {"label": "Dupes in Archive", "value": dupes},
         {"label": "Stars Cleaned",    "value": stars_fixed},
@@ -122,7 +126,7 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
             "Consider using the New only filter before exporting."
         )
 
-    kept_tab, removed_tab = st.tabs(["Kept", "Removed"])
+    kept_tab, changed_tab, removed_tab = st.tabs(["Kept", "Changed", "Removed"])
 
     with kept_tab:
         st.caption(f"{len(df_kept):,} rows kept")
@@ -152,6 +156,19 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
         )
         if clicked and is_configured() and ec:
             record_export(export_df[ec].dropna().tolist(), platform, state.get("filename", "unknown"))
+
+    with changed_tab:
+        st.caption(f"{len(df_changed):,} rows had values modified in place")
+        if df_changed.empty:
+            st.info("No rows were changed.")
+        else:
+            st.dataframe(df_changed, use_container_width=True, hide_index=True)
+            render_export_button(
+                df_changed,
+                label="Download Changed",
+                file_name="terraboost_changed.csv",
+                key="tb_dl_changed",
+            )
 
     with removed_tab:
         st.caption(f"{len(df_removed):,} rows removed")
