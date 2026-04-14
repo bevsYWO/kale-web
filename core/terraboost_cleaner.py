@@ -27,6 +27,9 @@ _TB_PLACEHOLDER_RE = re.compile(
     r'^(n/?a\.?|none|unknown|--|-)$', re.IGNORECASE
 )
 
+# Characters not typical in company names (kept: word chars, spaces, . , & ' - ( ) / + # @)
+_TB_SPECIAL_CHAR_RE = re.compile(r'[^\w\s\.\,\&\'\-\(\)\/\+\#\@]', re.UNICODE)
+
 # Step 4 — canonical output column names
 TB_EXPORT_RENAME = {
     'shop_name':         'shop_name',
@@ -50,6 +53,29 @@ def normalize_shop_name(value):
     return None
 
 
+def clean_company_name(value):
+    """
+    Clean a company name:
+    - Remove control/non-printable characters
+    - Replace stray special characters with a space
+    - Collapse extra whitespace
+    Returns cleaned string, or None if the result is blank/garbled.
+    """
+    v = str(value).strip()
+    if not v or _TB_PLACEHOLDER_RE.match(v):
+        return None
+    # Strip control characters
+    v = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', v)
+    # Replace special characters not typical in company names
+    v = _TB_SPECIAL_CHAR_RE.sub(' ', v)
+    # Collapse extra whitespace
+    v = re.sub(r' {2,}', ' ', v).strip()
+    # Must have at least 2 alphanumeric characters to be a valid name
+    if not v or sum(1 for c in v if c.isalnum()) < 2:
+        return None
+    return v
+
+
 def clean_google_stars(value):
     """Return a clean star string (numeric 1.0-5.0), or '' for blank/invalid."""
     v = str(value).strip()
@@ -71,6 +97,8 @@ def _detect_terraboost_columns(df):
         'google_stars':      _find_col(cols, r'google[\s_]?stars?', r'star[\s_]?rating',
                                             r'^stars?$', r'^rating$'),
         'business_category': _find_col(cols, r'business[\s_]?categor', r'^categor'),
+        'company_name':      _find_col(cols, r'cleaned[\s_]?company[\s_]?name',
+                                            r'company[\s_]?name'),
     }
 
 
@@ -105,6 +133,16 @@ def clean_terraboost_dataframe(df):
                 removed_rows.append((row, "Missing business category"))
                 kept_mask[idx] = False
                 continue
+
+        # Step 4 — company_name: clean special chars; remove if blank/garbled
+        if cm['company_name']:
+            cn = clean_company_name(row[cm['company_name']])
+            if cn is None:
+                removed_rows.append(
+                    (row, f"Garbled/invalid company name: {row[cm['company_name']]!r}"))
+                kept_mask[idx] = False
+                continue
+            df.at[idx, cm['company_name']] = cn
 
     # Step 2 — google_stars: clean in place (no row removal)
     kept_df = df[kept_mask].copy()

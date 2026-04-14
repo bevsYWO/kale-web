@@ -57,6 +57,7 @@ Cleans Terraboost grocery store contact data — validates store names, cleans s
 - **Store name** — must be a known chain (Harris Teeter, HEB, Kroger, Jewel, Albertsons). Invalid names are removed.
 - **Google Stars** — cleaned and normalized in place (must be 1.0–5.0). No rows removed for this.
 - **Business Category** — rows with blank or placeholder categories are removed.
+- **Cleaned Company Name** — special characters and control characters are removed; extra whitespace is collapsed. Rows where the name is blank or garbled after cleaning are removed.
 
 Removed rows are visible in the **Removed** tab and can be downloaded separately.
         """)
