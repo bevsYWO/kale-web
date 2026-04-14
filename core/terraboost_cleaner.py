@@ -30,6 +30,13 @@ _TB_PLACEHOLDER_RE = re.compile(
 # Characters not typical in company names (kept: word chars, spaces, . , & ' - ( ) / + # @)
 _TB_SPECIAL_CHAR_RE = re.compile(r'[^\w\s\.\,\&\'\-\(\)\/\+\#\@]', re.UNICODE)
 
+# Casing rules for company name normalization
+_TB_LOWER_WORDS  = frozenset({
+    'a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'if',
+    'in', 'nor', 'of', 'on', 'or', 'so', 'the', 'to', 'up', 'yet',
+})
+_TB_KEEP_UPPER = frozenset({'llc', 'llp', 'lp', 'pc', 'pllc', 'dba'})
+
 # Step 4 — canonical output column names
 TB_EXPORT_RENAME = {
     'shop_name':         'shop_name',
@@ -41,6 +48,29 @@ TB_EXPORT_RENAME = {
 # ==============================================================================
 # CLEANING FUNCTIONS
 # ==============================================================================
+
+def _normalize_company_casing(name: str) -> str:
+    """
+    Normalize company name casing:
+    - Title-case each word (ALLIED → Allied)
+    - Keep small conjunctions/prepositions lowercase when not first word (OF → of)
+    - Keep known acronyms fully uppercase (LLC, LLP, PC, DBA)
+    - Preserve trailing punctuation per word (CO. → Co., INC. → Inc.)
+    """
+    words = name.split()
+    result = []
+    for i, word in enumerate(words):
+        stripped = word.rstrip('.,;:')
+        punct    = word[len(stripped):]
+        key      = stripped.lower()
+        if key in _TB_KEEP_UPPER:
+            result.append(stripped.upper() + punct)
+        elif i > 0 and key in _TB_LOWER_WORDS:
+            result.append(stripped.lower() + punct)
+        else:
+            result.append(stripped.capitalize() + punct)
+    return ' '.join(result)
+
 
 def normalize_shop_name(value):
     """Return the canonical chain name if value matches a valid chain, else None."""
@@ -73,7 +103,7 @@ def clean_company_name(value):
     # Must have at least 2 alphanumeric characters to be a valid name
     if not v or sum(1 for c in v if c.isalnum()) < 2:
         return None
-    return v
+    return _normalize_company_casing(v)
 
 
 def clean_google_stars(value):
