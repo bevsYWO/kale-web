@@ -96,6 +96,11 @@ def clean_company_name(value):
     v = _fix_name_encoding(str(value))  # mojibake fix + accent strip → plain ASCII
     if not v or _TB_PLACEHOLDER_RE.match(v):
         return None
+    # If multiple names separated by /, take the first one
+    # e.g. DependaCoat/DependaRoof/DependaGutters → DependaCoat
+    if '/' in v:
+        parts = [p.strip() for p in v.split('/') if p.strip()]
+        v = parts[0] if parts else v
     # Remove any remaining non-ASCII characters (CJK, Arabic, etc.)
     v = re.sub(r'[^\x00-\x7F]+', ' ', v)
     # Replace special characters not typical in company names
