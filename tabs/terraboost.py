@@ -2,6 +2,8 @@
 tabs/terraboost.py — Terraboost data cleaner tab.
 """
 
+import os
+
 import pandas as pd
 import streamlit as st
 
@@ -148,10 +150,11 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
 
         st.caption(f"{len(export_df):,} rows ready for export")
 
+        orig_base = os.path.splitext(state.get("filename", "terraboost"))[0]
         clicked = render_export_button(
             export_df,
             label=f"Download Kept — {platform}",
-            file_name=build_filename("terraboost_kept", platform),
+            file_name=build_filename(orig_base, platform, filter_label=filter_opt),
             key="tb_dl",
         )
         if clicked and is_configured() and ec:
