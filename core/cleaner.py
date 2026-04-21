@@ -22,8 +22,11 @@ def _remove_control_chars(text):
     return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
 
 def _fix_mojibake(text):
+    # Use cp1252 (not latin-1) so uppercase accented chars like É (0xC3 0x89 in UTF-8,
+    # read as Ã‰ in cp1252) can be recovered. latin-1 maps 0x89 to a control char and
+    # cannot encode ‰ (U+2030), causing the decode to fail silently.
     try:
-        return text.encode('latin-1').decode('utf-8')
+        return text.encode('cp1252').decode('utf-8')
     except (UnicodeDecodeError, UnicodeEncodeError):
         return text
 
