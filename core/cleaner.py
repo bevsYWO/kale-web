@@ -301,6 +301,9 @@ def fix_first_name(first, email='', linkedin=''):
     if re.fullmatch(r'[A-Za-z]', v):
         return _name_from_email(email) or 'there'
     if '?' in v or _GARBLED_RE.search(v):
+        ascii_v = re.sub(r'[^\x00-\x7F]', '', v).strip()
+        if ascii_v and len(ascii_v) >= 2 and re.search(r'[A-Za-z]', ascii_v):
+            return ascii_v[0].upper() + ascii_v[1:]
         return _name_from_email(email) or 'there'
     if re.search(r'\d', v):
         return 'there'
