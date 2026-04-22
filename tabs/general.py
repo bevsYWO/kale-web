@@ -182,17 +182,21 @@ A universal cleaner for any CSV. Always fixes encoding issues on every cell. Opt
                 state["df_kept"]    = kept
                 state["df_removed"] = removed
                 state["changes"]    = changes
-                if is_configured():
-                    ec_tmp = _find_email_col(kept)
-                    if ec_tmp:
-                        state["dupe_map"] = check_dupes(kept[ec_tmp].tolist(), "General")
-                    user = st.session_state.get("user_name", "")
-                    src  = f"{state.get('filename', 'unknown')} ({user})" if user else state.get("filename", "unknown")
-                    added, _ = append_to_archive(kept, "General", src)
-                    st.info(f"Archive: {added} emails saved.")
             except Exception as e:
                 st.error(f"Error during cleaning: {e}")
                 return
+        if is_configured():
+            with st.spinner("Checking archive..."):
+                try:
+                    ec_tmp = _find_email_col(state["df_kept"])
+                    if ec_tmp:
+                        state["dupe_map"] = check_dupes(state["df_kept"][ec_tmp].tolist(), "General")
+                    user = st.session_state.get("user_name", "")
+                    src  = f"{state.get('filename', 'unknown')} ({user})" if user else state.get("filename", "unknown")
+                    added, _ = append_to_archive(state["df_kept"], "General", src)
+                    st.info(f"Archive: {added} emails saved.")
+                except Exception as e:
+                    st.warning(f"Archive write failed: {e}")
 
     if state.get("df_kept") is None:
         return

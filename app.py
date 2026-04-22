@@ -58,6 +58,9 @@ if not st.session_state.authenticated:
 # MAIN APP — only shown when authenticated
 # ==============================================================================
 
+from datetime import date as _date
+
+from changelog import CHANGELOG
 from db.client import is_configured
 from tabs import riipen, n2, terraboost, n2_recruiting, general, archive as archive_tab
 from tabs import home as home_tab
@@ -91,6 +94,22 @@ with col_lg2:
         st.rerun()
 
 st.markdown("<hr style='margin:0 0 0.5rem;border-color:#D6D3CB;'>", unsafe_allow_html=True)
+
+# ── Changelog banner (shows entries from the last 7 days) ─────────────────────
+_recent = [
+    c for c in CHANGELOG
+    if (_date.today() - _date.fromisoformat(c["date"])).days <= 7
+]
+if _recent:
+    _parts = [f"<strong>{c['tab']}</strong> — {c['note']}" for c in _recent[:3]]
+    _msg   = " &nbsp;·&nbsp; ".join(_parts)
+    st.markdown(
+        f"<div style='background:#F0F7F1;border-left:3px solid #5C8B67;padding:0.35rem 0.8rem;"
+        f"border-radius:4px;font-size:0.8rem;color:#3D5C44;margin-bottom:0.6rem;'>"
+        f"🔔 &nbsp;{_msg}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(

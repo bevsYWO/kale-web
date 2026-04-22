@@ -74,9 +74,9 @@ def _randomize_tiers(df: pd.DataFrame, tier_col: str) -> pd.DataFrame:
     t3 = df[df[tier_col] == "3"].copy()
     other = df[~df[tier_col].isin(["1", "2", "3"])].copy()
 
-    random.shuffle(t1.values.tolist()) if len(t1) else None
-    random.shuffle(t2.values.tolist()) if len(t2) else None
-    random.shuffle(t3.values.tolist()) if len(t3) else None
+    if len(t1): t1 = t1.sample(frac=1).reset_index(drop=True)
+    if len(t2): t2 = t2.sample(frac=1).reset_index(drop=True)
+    if len(t3): t3 = t3.sample(frac=1).reset_index(drop=True)
 
     interleaved = []
     i1 = i2 = i3 = 0
@@ -212,19 +212,20 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
             state["df_tiered"]  = df_kept
             state["df_removed"] = df_removed
             state["tier_col"]   = tier_col
-            if is_configured():
-                ec_auto = _find_email_col(df_kept)
-                if ec_auto:
-                    state["dupe_map"] = check_dupes(df_kept[ec_auto].tolist(), "N2")
+        if is_configured():
+            with st.spinner("Checking archive..."):
                 try:
+                    ec_auto = _find_email_col(df_kept)
+                    if ec_auto:
+                        state["dupe_map"] = check_dupes(df_kept[ec_auto].tolist(), "N2")
                     user = st.session_state.get("user_name", "")
                     src  = f"{state.get('filename', 'unknown')} ({user})" if user else state.get("filename", "unknown")
                     added, _ = append_to_archive(df_kept, "N2", src)
                     st.info(f"Archive: {added} emails saved.")
+                    if ec_auto:
+                        record_export(df_kept[ec_auto].dropna().tolist(), "N2", state.get("filename", "unknown"))
                 except Exception as e:
                     st.warning(f"Archive write failed: {e}")
-                if ec_auto:
-                    record_export(df_kept[ec_auto].dropna().tolist(), "N2", state.get("filename", "unknown"))
 
     if state["df_tiered"] is None:
         return

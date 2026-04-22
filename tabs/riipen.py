@@ -11,7 +11,7 @@ from core.cleaner import clean_dataframe, compute_diff, build_summary, build_hot
 from components.stat_cards import render_stat_cards
 from components.diff_viewer import render_diff_table
 from components.export_button import render_export_button, build_filename
-from db.archive import append_to_archive
+from db.archive import append_to_archive, check_dupes
 from db.platform_history import get_platforms_for_emails, record_export
 from db.client import is_configured
 
@@ -84,20 +84,21 @@ Each contact is automatically checked against the master archive. The *In Client
                 state["df_clean"] = df_clean
                 state["changes"]  = changes
                 state["filename"] = uploaded.name
-                if is_configured():
-                    try:
-                        ec_tmp = _email_col(df_clean)
-                        if ec_tmp:
-                            state["dupe_map"] = check_dupes(df_clean[ec_tmp].tolist(), "Riipen")
-                        user = st.session_state.get("user_name", "")
-                        src  = f"{uploaded.name} ({user})" if user else uploaded.name
-                        added, _ = append_to_archive(df_clean, "Riipen", src)
-                        st.info(f"Archive: {added} emails saved.")
-                    except Exception as e:
-                        st.warning(f"Archive write failed: {e}")
             except Exception as e:
                 st.error(f"Error processing file: {e}")
                 return
+        if is_configured():
+            with st.spinner("Checking archive..."):
+                try:
+                    ec_tmp = _email_col(state["df_clean"])
+                    if ec_tmp:
+                        state["dupe_map"] = check_dupes(state["df_clean"][ec_tmp].tolist(), "Riipen")
+                    user = st.session_state.get("user_name", "")
+                    src  = f"{uploaded.name} ({user})" if user else uploaded.name
+                    added, _ = append_to_archive(state["df_clean"], "Riipen", src)
+                    st.info(f"Archive: {added} emails saved.")
+                except Exception as e:
+                    st.warning(f"Archive write failed: {e}")
 
     if state["df_clean"] is None:
         st.info("Upload a CSV or Excel file to begin cleaning.")

@@ -80,17 +80,21 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
                 state["df_changed"] = changed
                 state["col_map"]    = cm
                 state["filename"]   = uploaded.name
-                if is_configured():
-                    ec_tmp = _find_email_col(kept)
-                    if ec_tmp:
-                        state["dupe_map"] = check_dupes(kept[ec_tmp].tolist(), "Terraboost")
-                    user = st.session_state.get("user_name", "")
-                    src  = f"{uploaded.name} ({user})" if user else uploaded.name
-                    added, _ = append_to_archive(kept, "Terraboost", src)
-                    st.info(f"Archive: {added} emails saved.")
             except Exception as e:
                 st.error(f"Error processing file: {e}")
                 return
+        if is_configured():
+            with st.spinner("Checking archive..."):
+                try:
+                    ec_tmp = _find_email_col(state["df_kept"])
+                    if ec_tmp:
+                        state["dupe_map"] = check_dupes(state["df_kept"][ec_tmp].tolist(), "Terraboost")
+                    user = st.session_state.get("user_name", "")
+                    src  = f"{uploaded.name} ({user})" if user else uploaded.name
+                    added, _ = append_to_archive(state["df_kept"], "Terraboost", src)
+                    st.info(f"Archive: {added} emails saved.")
+                except Exception as e:
+                    st.warning(f"Archive write failed: {e}")
 
     if state["df_kept"] is None:
         st.info("Upload a CSV or Excel file to begin.")
@@ -102,12 +106,12 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
     df_changed = state["df_changed"]
     cm         = state["col_map"]
 
-    # Stars cleaned count
+    # Stars cleaned count — compare only kept rows using label alignment
     stars_fixed = 0
-    if cm.get("google_stars"):
-        orig_stars  = df_orig[cm["google_stars"]].fillna("")
-        clean_stars = df_kept[cm["google_stars"]].fillna("") if cm["google_stars"] in df_kept.columns else orig_stars
-        stars_fixed = int((orig_stars[:len(clean_stars)] != clean_stars).sum())
+    if cm.get("google_stars") and cm["google_stars"] in df_kept.columns:
+        orig_col  = df_orig[cm["google_stars"]].fillna("")
+        clean_col = df_kept[cm["google_stars"]].fillna("")
+        stars_fixed = int((orig_col[df_kept.index] != clean_col).sum())
 
     ec    = _find_email_col(df_kept)
     dupes = len(state.get("dupe_map") or {})

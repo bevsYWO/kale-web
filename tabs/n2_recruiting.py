@@ -85,17 +85,21 @@ Each contact is automatically checked against the master archive. The *In Client
                 state["col_map"]  = col_map
                 state["changes"]  = changes
                 state["filename"] = uploaded.name
-                if is_configured():
-                    ec_tmp = _find_email_col(df_clean)
-                    if ec_tmp:
-                        state["dupe_map"] = check_dupes(df_clean[ec_tmp].tolist(), "N2 Recruiting")
-                    user = st.session_state.get("user_name", "")
-                    src  = f"{uploaded.name} ({user})" if user else uploaded.name
-                    added, skipped = append_to_archive(df_clean, "N2 Recruiting", src)
-                    st.info(f"Archive: {added} rows written, {skipped} skipped.")
             except Exception as e:
                 st.error(f"Error processing file: {e}")
                 return
+        if is_configured():
+            with st.spinner("Checking archive..."):
+                try:
+                    ec_tmp = _find_email_col(state["df_clean"])
+                    if ec_tmp:
+                        state["dupe_map"] = check_dupes(state["df_clean"][ec_tmp].tolist(), "N2 Recruiting")
+                    user = st.session_state.get("user_name", "")
+                    src  = f"{uploaded.name} ({user})" if user else uploaded.name
+                    added, skipped = append_to_archive(state["df_clean"], "N2 Recruiting", src)
+                    st.info(f"Archive: {added} rows written, {skipped} skipped.")
+                except Exception as e:
+                    st.warning(f"Archive write failed: {e}")
 
     if state["df_clean"] is None:
         st.info("Upload a CSV or Excel file to begin cleaning.")

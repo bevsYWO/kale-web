@@ -141,8 +141,9 @@ def append_to_archive(
             c, on_conflict="email"
         ).execute())
 
-    added = len(emails_seen)
-    return added, 0
+    added   = len(emails_seen)
+    skipped = len(df) - added
+    return added, skipped
 
 
 # ==============================================================================
