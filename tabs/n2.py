@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from core.tier_mapper import get_tier, TIER_MAP, BUSINESS_TYPE_EXCLUDE
+from core.cleaner import fix_subject_city
 from components.stat_cards import render_stat_cards
 from components.export_button import render_export_button, build_filename
 from db.archive import append_to_archive, check_dupes
@@ -98,11 +99,12 @@ def _randomize_tiers(df: pd.DataFrame, tier_col: str) -> pd.DataFrame:
 
 def render():
     state = st.session_state.setdefault("n2", {
-        "df_orig":    None,
-        "df_tiered":  None,
-        "df_removed": None,
-        "filename":   None,
-        "tier_col":   None,
+        "df_orig":         None,
+        "df_tiered":       None,
+        "df_removed":      None,
+        "filename":        None,
+        "tier_col":        None,
+        "belocal_pub_name": "",
     })
 
     st.subheader("N2 Tier Mapper")
@@ -173,6 +175,27 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
             key="n2_kw_col",
         )
 
+    # ── BeLocal auto-rules ────────────────────────────────────────────────────
+    belocal = "belocal" in (state.get("filename") or "").lower()
+    if belocal:
+        st.markdown(
+            "<div style='background:#F0F7F1;border-left:3px solid #5C8B67;padding:0.4rem 0.8rem;"
+            "border-radius:4px;font-size:0.82rem;color:#3D5C44;margin:0.5rem 0;'>"
+            "📍 <strong>BeLocal file detected</strong> — city clean, blank Google Stars rows, "
+            "and Publication Name will be applied automatically."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        pub_input = st.text_input(
+            "Publication name for this file",
+            value=state.get("belocal_pub_name", ""),
+            placeholder="e.g. Wichita, Dallas, Houston...",
+            key="n2_belocal_pub",
+        )
+        state["belocal_pub_name"] = pub_input
+        if not pub_input.strip():
+            st.warning("Enter a publication name before applying.")
+
     if st.button("Apply Tier Map", key="n2_apply"):
         with st.spinner("Mapping tiers..."):
             df = df_orig.copy()
@@ -208,6 +231,41 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
                     return f"Excluded business type"
                 return df.at[idx, tier_col]
             df_removed.insert(0, "Removal Reason", df_removed.index.map(_reason))
+
+            # ── BeLocal extra cleaning ────────────────────────────────────────
+            if belocal:
+                bl_removed_frames = []
+
+                # Find relevant columns
+                city_col  = next((c for c in df_kept.columns if re.search(r'^city$', c, re.IGNORECASE)), None)
+                stars_col = next((c for c in df_kept.columns if re.search(r'google[\s_]?star|^stars?$|^rating$', c, re.IGNORECASE)), None)
+                pub_col   = next((c for c in df_kept.columns if re.search(r'publication[\s_]?name|^publication$', c, re.IGNORECASE)), None)
+
+                # Clean city and remove invalid/blank rows
+                if city_col:
+                    df_kept[city_col] = df_kept[city_col].apply(fix_subject_city)
+                    bad_city = df_kept[city_col].isin(["Your city", ""])
+                    if bad_city.any():
+                        bl_removed_frames.append(df_kept[bad_city].copy())
+                        df_kept = df_kept[~bad_city].copy()
+
+                # Remove rows with blank Google Stars
+                if stars_col:
+                    bad_stars = df_kept[stars_col].str.strip() == ""
+                    if bad_stars.any():
+                        bl_removed_frames.append(df_kept[bad_stars].copy())
+                        df_kept = df_kept[~bad_stars].copy()
+
+                # Set publication name
+                pub_name = (state.get("belocal_pub_name") or "").strip()
+                if pub_name:
+                    target_col = pub_col if pub_col else "Publication Name"
+                    df_kept[target_col] = pub_name
+
+                # Merge any belocal-removed rows into df_removed
+                if bl_removed_frames:
+                    extra = pd.concat(bl_removed_frames, ignore_index=True)
+                    df_removed = pd.concat([df_removed, extra], ignore_index=True)
 
             state["df_tiered"]  = df_kept
             state["df_removed"] = df_removed
