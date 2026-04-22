@@ -21,10 +21,21 @@ def _fix_ctrl_digit(text):
 def _remove_control_chars(text):
     return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
 
+# When UTF-8 bytes are decoded as Latin-1, bytes 0x80-0x9F become C1 control chars
+# (U+0080-U+009F) instead of the cp1252 printable chars they represent (€, ‰, etc.).
+# Remapping them first lets the cp1252 encode step succeed.
+_C1_TO_CP1252 = str.maketrans({
+    '\x80': '€', '\x82': '‚', '\x83': 'ƒ', '\x84': '„',
+    '\x85': '…', '\x86': '†', '\x87': '‡', '\x88': 'ˆ',
+    '\x89': '‰', '\x8a': 'Š', '\x8b': '‹', '\x8c': 'Œ',
+    '\x8e': 'Ž', '\x91': '‘', '\x92': '’', '\x93': '“',
+    '\x94': '”', '\x95': '•', '\x96': '–', '\x97': '—',
+    '\x98': '˜', '\x99': '™', '\x9a': 'š', '\x9b': '›',
+    '\x9c': 'œ', '\x9e': 'ž', '\x9f': 'Ÿ',
+})
+
 def _fix_mojibake(text):
-    # Use cp1252 (not latin-1) so uppercase accented chars like É (0xC3 0x89 in UTF-8,
-    # read as Ã‰ in cp1252) can be recovered. latin-1 maps 0x89 to a control char and
-    # cannot encode ‰ (U+2030), causing the decode to fail silently.
+    text = text.translate(_C1_TO_CP1252)
     try:
         return text.encode('cp1252').decode('utf-8')
     except (UnicodeDecodeError, UnicodeEncodeError):
