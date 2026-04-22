@@ -281,32 +281,45 @@ def fix_company_slash(name):
     return name.split('/')[0].strip().rstrip(' -,')
 
 _PLACEHOLDER_NAMES = frozenset({
-    'n/a', 'na', 'n.a.', 'none', 'unknown', '-', '--', '.', 'test', 'there',
+    'n/a', 'na', 'n.a.', 'none', 'unknown', '-', '--', '.', 'test',
 })
+
+
+def _ascii_rescue(raw):
+    """Last-resort: pull first ASCII word (≥2 letters) from raw value."""
+    parts = re.findall(r'[A-Za-z][A-Za-z\-]*', str(raw))
+    for p in parts:
+        if len(p) >= 2:
+            return p[0].upper() + p[1:]
+    return ''
 _CONJUNCTIONS_RE = re.compile(
     r'^(and/or|his/her|he/she|him/her|s/he|w/o|w/e)$', re.IGNORECASE
 )
 
 def fix_first_name(first, email='', linkedin=''):
-    v = _fix_name_encoding(str(first))   # Ã© → é → e (mojibake fix + strip accents to plain ASCII)
-    v = re.sub(r"^['\u2018\u2019\"`]+", '', v).strip()
+    raw = str(first).strip()
+    v = _fix_name_encoding(raw)   # Ã© → é → e (mojibake fix + strip accents to plain ASCII)
+    v = re.sub(r"^['‘’\"`]+", '', v).strip()
     v = re.sub(r"^~+", '', v).strip()
     if v:
         v = v[0].upper() + v[1:]
     if not v:
-        return _name_from_email(email) or 'there'
+        return _name_from_email(email) or _ascii_rescue(raw) or 'there'
     lower_v = v.lower()
-    if lower_v in _PLACEHOLDER_NAMES:
-        return 'there'
-    if re.fullmatch(r'[A-Za-z]', v):
+    if lower_v == 'there':
+        # Re-uploaded from a previously-processed file — try to recover from email
         return _name_from_email(email) or 'there'
-    if '?' in v or _GARBLED_RE.search(v):
-        ascii_v = re.sub(r'[^\x00-\x7F]', '', v).replace('?', '').strip()
+    if lower_v in _PLACEHOLDER_NAMES:
+        return _name_from_email(email) or _ascii_rescue(raw) or 'there'
+    if re.fullmatch(r'[A-Za-z]', v):
+        return _name_from_email(email) or _ascii_rescue(raw) or 'there'
+    if '?' in v or _GARBLED_RE.search(v) or not v.isascii():
+        ascii_v = re.sub(r'[^\x00-\x7f]', '', v).replace('?', '').strip()
         if ascii_v and len(ascii_v) >= 2 and re.search(r'[A-Za-z]', ascii_v):
             return ascii_v[0].upper() + ascii_v[1:]
-        return _name_from_email(email) or 'there'
+        return _name_from_email(email) or _ascii_rescue(raw) or 'there'
     if re.search(r'\d', v):
-        return 'there'
+        return 'there' 
     if '/' in v:
         if _CONJUNCTIONS_RE.match(v):
             return 'there'
@@ -388,7 +401,7 @@ def _detect_columns(df):
         'first_line':  _find_col(cols, r'^first.?line$'),
         'first_name':  _find_col(cols, r'^first.?name$'),
         'last_name':   _find_col(cols, r'^last.?name$'),
-        'full_name':   _find_col(cols, r'^full.?name$'),
+        'full_name':   _find_col(cols, r'^full.?name$', r'^name$'),
         'email':       _find_col(cols, r'^email$', r'^email.?address$'),
         'linkedin':    _find_col(cols, r'linkedin', r'profile.?url'),
     }
@@ -430,6 +443,17 @@ def clean_dataframe(df):
                 r[cm['email']] if cm['email'] else '',
                 r[cm['linkedin']] if cm['linkedin'] else '',
             ), axis=1)
+        # Last resort: if still "there" and a full/name column exists, extract first word
+        if cm['full_name']:
+            def _rescue_from_full(row):
+                if row[cm['first_name']] != 'there':
+                    return row[cm['first_name']]
+                words = [w for w in _fix_name_encoding(str(row[cm['full_name']])).split()
+                         if len(w) >= 2 and re.search(r'[A-Za-z]', w)]
+                if words:
+                    return words[0][0].upper() + words[0][1:]
+                return 'there'
+            df[cm['first_name']] = df.apply(_rescue_from_full, axis=1)
     if cm['last_name']:
         df[cm['last_name']] = df[cm['last_name']].apply(fix_last_name)
         if cm['full_name'] and cm['first_name']:
