@@ -22,7 +22,13 @@ FILTER_OPTIONS   = ["All", "New only", "Dupes only"]
 def _load_file(uploaded) -> pd.DataFrame:
     name = uploaded.name.lower()
     if name.endswith(".csv"):
-        return pd.read_csv(uploaded, dtype=str, keep_default_na=False)
+        raw = uploaded.read()
+        for enc in ('utf-8-sig', 'utf-8', 'cp1252', 'latin-1'):
+            try:
+                return pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False, encoding=enc)
+            except (UnicodeDecodeError, pd.errors.ParserError):
+                continue
+        return pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False, encoding='latin-1', errors='replace')
     return pd.read_excel(uploaded, dtype=str, keep_default_na=False)
 
 
