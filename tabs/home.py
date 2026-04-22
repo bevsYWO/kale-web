@@ -76,19 +76,28 @@ def render():
         with col_title:
             st.markdown("#### Team Archive")
         with col_btn:
-            if st.button("Refresh", key="home_refresh"):
-                get_client_counts.clear()
-                get_total_contact_count.clear()
+            refresh = st.button("Refresh", key="home_refresh")
+
+        home_state = st.session_state.setdefault("home", {"loaded": False})
+        if refresh:
+            get_client_counts.clear()
+            get_total_contact_count.clear()
+            home_state["loaded"] = False
+
+        if not home_state["loaded"]:
+            if st.button("Load archive stats", key="home_load"):
+                home_state["loaded"] = True
                 st.rerun()
-        try:
-            counts = get_client_counts()
-            total  = get_total_contact_count()
-            cards  = [{"label": "Total Contacts Archived", "value": f"{total:,}"}]
-            for client, count in sorted(counts.items(), key=lambda x: -x[1]):
-                cards.append({"label": client, "value": f"{count:,}"})
-            render_stat_cards(cards[:6])
-        except Exception:
-            st.info("Archive stats unavailable right now.")
+        else:
+            try:
+                counts = get_client_counts()
+                total  = get_total_contact_count()
+                cards  = [{"label": "Total Contacts Archived", "value": f"{total:,}"}]
+                for client, count in sorted(counts.items(), key=lambda x: -x[1]):
+                    cards.append({"label": client, "value": f"{count:,}"})
+                render_stat_cards(cards[:6])
+            except Exception:
+                st.info("Archive stats unavailable right now.")
     else:
         st.info("Archive not connected — add Supabase credentials to secrets.toml to enable team tracking.")
 

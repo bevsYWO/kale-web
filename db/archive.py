@@ -18,8 +18,8 @@ import streamlit as st
 from db.client import get_client, is_configured
 
 
-def _retry(fn, retries=3, delay=2):
-    """Call fn(), retrying up to `retries` times on failure with a delay."""
+def _retry(fn, retries=2, delay=1):
+    """Call fn(), retrying once on failure with a short delay."""
     for attempt in range(retries):
         try:
             return fn()
