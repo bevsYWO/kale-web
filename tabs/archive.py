@@ -2,8 +2,6 @@
 tabs/archive.py — Archive viewer tab backed by Supabase master_contacts.
 """
 
-from datetime import date
-
 import pandas as pd
 import streamlit as st
 

@@ -115,10 +115,8 @@ Each contact is automatically checked against the master archive. The *In Client
     df_clean = state["df_clean"]
     changes  = state["changes"]
 
-    total_rows = len(df_orig)
+    total_rows    = len(df_orig)
     cells_changed = len(changes)
-    cols_affected = len(set(c[1] for c in changes))
-    pct_affected  = round(cells_changed / max(total_rows, 1) * 100, 1)
 
     ec    = _email_col(df_clean)
     dupes = len(state.get("dupe_map") or {})
@@ -220,7 +218,7 @@ Each contact is automatically checked against the master archive. The *In Client
         clicked = render_export_button(
             export_df,
             label=f"Download for {platform}",
-            file_name=build_filename(orig_base, platform, filter_label=filter_opt),
+            file_name=build_filename(orig_base, platform, filter_label=filter_opt if ec else ""),
             key="riipen_dl",
         )
         if clicked and is_configured() and ec:

@@ -158,7 +158,7 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
         clicked = render_export_button(
             export_df,
             label=f"Download Kept — {platform}",
-            file_name=build_filename(orig_base, platform, filter_label=filter_opt),
+            file_name=build_filename(orig_base, platform, filter_label=filter_opt if ec else ""),
             key="tb_dl",
         )
         if clicked and is_configured() and ec:

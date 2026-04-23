@@ -251,7 +251,7 @@ A universal cleaner for any CSV. Always fixes encoding issues on every cell. Opt
         clicked = render_export_button(
             export_df,
             label=f"Download Kept — {platform}",
-            file_name=build_filename(orig_base, platform, filter_label=filter_opt),
+            file_name=build_filename(orig_base, platform, filter_label=filter_opt if ec else ""),
             key="gen_dl",
         )
         if clicked and is_configured() and ec:

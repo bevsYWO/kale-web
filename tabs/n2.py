@@ -370,7 +370,7 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
         clicked = render_export_button(
             export_df,
             label=f"Download for {platform}",
-            file_name=build_filename(orig_base, platform, filter_label=filter_opt),
+            file_name=build_filename(orig_base, platform, filter_label=filter_opt if ec else ""),
             key="n2_dl",
         )
         if clicked and is_configured() and ec:
