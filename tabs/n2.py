@@ -386,6 +386,6 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
             render_export_button(
                 df_removed,
                 label="Download Removed",
-                file_name=build_filename(orig_base + "_removed", ""),
+                file_name=build_filename(orig_base + "-removed", ""),
                 key="n2_dl_removed",
             )

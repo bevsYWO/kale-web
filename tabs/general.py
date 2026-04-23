@@ -267,7 +267,7 @@ A universal cleaner for any CSV. Always fixes encoding issues on every cell. Opt
             render_export_button(
                 df_removed,
                 label="Download Removed",
-                file_name=build_filename(orig_base + "_removed", ""),
+                file_name=build_filename(orig_base + "-removed", ""),
                 key="gen_dl_removed",
             )
 

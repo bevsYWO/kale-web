@@ -173,7 +173,7 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
             render_export_button(
                 df_changed,
                 label="Download Changed",
-                file_name=build_filename(orig_base + "_changed", ""),
+                file_name=build_filename(orig_base + "-changed", ""),
                 key="tb_dl_changed",
             )
 
@@ -186,6 +186,6 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
             render_export_button(
                 df_removed,
                 label="Download Removed",
-                file_name=build_filename(orig_base + "_removed", ""),
+                file_name=build_filename(orig_base + "-removed", ""),
                 key="tb_dl_removed",
             )
