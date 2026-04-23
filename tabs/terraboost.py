@@ -132,6 +132,7 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
             "Consider using the New only filter before exporting."
         )
 
+    orig_base  = os.path.splitext(state.get("filename", "terraboost"))[0]
     kept_tab, changed_tab, removed_tab = st.tabs(["Kept", "Changed", "Removed"])
 
     with kept_tab:
@@ -154,7 +155,6 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
 
         st.caption(f"{len(export_df):,} rows ready for export")
 
-        orig_base = os.path.splitext(state.get("filename", "terraboost"))[0]
         clicked = render_export_button(
             export_df,
             label=f"Download Kept — {platform}",
@@ -173,7 +173,7 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
             render_export_button(
                 df_changed,
                 label="Download Changed",
-                file_name="terraboost_changed.csv",
+                file_name=build_filename(orig_base + "_changed", ""),
                 key="tb_dl_changed",
             )
 
@@ -186,6 +186,6 @@ Removed rows are visible in the **Removed** tab and can be downloaded separately
             render_export_button(
                 df_removed,
                 label="Download Removed",
-                file_name="terraboost_removed.csv",
+                file_name=build_filename(orig_base + "_removed", ""),
                 key="tb_dl_removed",
             )

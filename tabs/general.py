@@ -2,6 +2,8 @@
 tabs/general.py — General-purpose cleaner tab.
 """
 
+import os
+
 import pandas as pd
 import streamlit as st
 
@@ -245,10 +247,11 @@ A universal cleaner for any CSV. Always fixes encoding issues on every cell. Opt
 
         st.caption(f"{len(export_df):,} rows ready for export")
 
+        orig_base = os.path.splitext(state.get("filename", "general"))[0]
         clicked = render_export_button(
             export_df,
             label=f"Download Kept — {platform}",
-            file_name=build_filename("general_kept", platform),
+            file_name=build_filename(orig_base, platform, filter_label=filter_opt),
             key="gen_dl",
         )
         if clicked and is_configured() and ec:
@@ -260,10 +263,11 @@ A universal cleaner for any CSV. Always fixes encoding issues on every cell. Opt
             st.info("No rows removed.")
         else:
             st.dataframe(df_removed, use_container_width=True, hide_index=True)
+            orig_base = os.path.splitext(state.get("filename", "general"))[0]
             render_export_button(
                 df_removed,
                 label="Download Removed",
-                file_name="general_removed.csv",
+                file_name=build_filename(orig_base + "_removed", ""),
                 key="gen_dl_removed",
             )
 

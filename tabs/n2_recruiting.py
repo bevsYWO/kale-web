@@ -2,6 +2,8 @@
 tabs/n2_recruiting.py — N2 Recruiting data cleaner tab.
 """
 
+import os
+
 import pandas as pd
 import streamlit as st
 
@@ -212,10 +214,11 @@ Each contact is automatically checked against the master archive. The *In Client
 
         st.caption(f"{len(export_df):,} rows ready for export")
 
+        orig_base = os.path.splitext(state.get("filename", "n2_recruiting"))[0]
         clicked = render_export_button(
             export_df,
             label=f"Download for {platform}",
-            file_name=build_filename("n2_recruiting", platform),
+            file_name=build_filename(orig_base, platform, filter_label=filter_opt),
             key="n2r_dl",
         )
         if clicked and is_configured() and ec_export:

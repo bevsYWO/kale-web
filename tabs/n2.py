@@ -2,6 +2,7 @@
 tabs/n2.py — N2 Tier Mapper tab.
 """
 
+import os
 import random
 import re
 
@@ -365,10 +366,11 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
 
         st.caption(f"{len(export_df):,} rows ready for export")
 
+        orig_base = os.path.splitext(state.get("filename", "n2"))[0]
         clicked = render_export_button(
             export_df,
             label=f"Download for {platform}",
-            file_name=build_filename("n2_tiered", platform),
+            file_name=build_filename(orig_base, platform, filter_label=filter_opt),
             key="n2_dl",
         )
         if clicked and is_configured() and ec:
@@ -380,9 +382,10 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
             st.info("No rows removed.")
         else:
             st.dataframe(df_removed, use_container_width=True, hide_index=True)
+            orig_base = os.path.splitext(state.get("filename", "n2"))[0]
             render_export_button(
                 df_removed,
                 label="Download Removed",
-                file_name="n2_removed.csv",
+                file_name=build_filename(orig_base + "_removed", ""),
                 key="n2_dl_removed",
             )

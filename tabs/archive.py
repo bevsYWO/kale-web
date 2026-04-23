@@ -10,7 +10,7 @@ import streamlit as st
 from db.archive import load_archive, get_client_counts
 from db.client import is_configured
 from components.stat_cards import render_stat_cards
-from components.export_button import render_export_button
+from components.export_button import render_export_button, build_filename
 
 
 def render():
@@ -111,6 +111,6 @@ Every time you clean a file through any tab (Riipen, N2, N2 Recruiting, Terraboo
     render_export_button(
         display_df,
         label="Export Filtered CSV",
-        file_name="kale_archive_export.csv",
+        file_name=build_filename("kale_archive", ""),
         key="archive_dl",
     )
