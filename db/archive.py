@@ -276,7 +276,9 @@ def check_dupes(emails: list[str], client_name: str) -> dict[str, list[str]]:
                 .data or []
             )
             for row in rows:
-                result_map[row["email"]] = row.get("clients", [])
+                clients = row.get("clients") or []
+                if client_name in clients:
+                    result_map[row["email"]] = clients
         return result_map
     except Exception:
         return {}
