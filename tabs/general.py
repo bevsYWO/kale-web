@@ -24,6 +24,7 @@ from db.client import is_configured
 
 EXPORT_PLATFORMS = ["Instantly", "EmailBison", "Personal Bison"]
 FILTER_OPTIONS   = ["All", "New only", "Dupes only"]
+KNOWN_CLIENTS    = ["General", "Riipen", "N2", "Terraboost", "N2 Recruiting"]
 
 
 def _load_file(uploaded) -> pd.DataFrame:
@@ -173,6 +174,16 @@ A universal cleaner for any CSV. Always fixes encoding issues on every cell. Opt
         st.info("Upload a CSV or Excel file to begin.")
         return
 
+    _client_options = KNOWN_CLIENTS + ["Custom..."]
+    _client_sel = st.selectbox(
+        "Client", _client_options, key="gen_client_sel",
+        help="Which client do these leads belong to? Used for archive tracking and duplicate detection."
+    )
+    if _client_sel == "Custom...":
+        client_name = st.text_input("Custom client name", key="gen_client_custom").strip() or "General"
+    else:
+        client_name = _client_sel
+
     headers = state["headers"]
     rules   = _rule_editor(headers)
 
@@ -184,6 +195,7 @@ A universal cleaner for any CSV. Always fixes encoding issues on every cell. Opt
                 state["df_kept"]    = kept
                 state["df_removed"] = removed
                 state["changes"]    = changes
+                state["client"]     = client_name
             except Exception as e:
                 st.error(f"Error during cleaning: {e}")
                 return
@@ -192,10 +204,10 @@ A universal cleaner for any CSV. Always fixes encoding issues on every cell. Opt
                 try:
                     ec_tmp = _find_email_col(state["df_kept"])
                     if ec_tmp:
-                        state["dupe_map"] = check_dupes(state["df_kept"][ec_tmp].tolist(), "General")
+                        state["dupe_map"] = check_dupes(state["df_kept"][ec_tmp].tolist(), state["client"])
                     user = st.session_state.get("user_name", "")
                     src  = f"{state.get('filename', 'unknown')} ({user})" if user else state.get("filename", "unknown")
-                    added, _ = append_to_archive(state["df_kept"], "General", src)
+                    added, _ = append_to_archive(state["df_kept"], state["client"], src)
                     st.info(f"Archive: {added} emails saved.")
                 except Exception as e:
                     st.warning(f"Archive write failed: {e}")

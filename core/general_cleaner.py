@@ -30,12 +30,14 @@ ACTIONS = [
     "Apply name clean",
     "Remove row if blank",
     "N/A -> blank",
+    "Deduplicate",
 ]
 
 ACTIONS_NO_VALUE = {
     "Title Case", "UPPERCASE", "lowercase",
     "Apply city clean", "Apply name clean",
     "Remove row if blank", "N/A -> blank",
+    "Deduplicate",
 }
 
 ACTION_DESCRIPTIONS = {
@@ -51,6 +53,7 @@ ACTION_DESCRIPTIONS = {
     "Remove row if blank":        "Removes any row where this column is empty or contains only whitespace.",
     "N/A -> blank":               "Converts common placeholder values (N/A, n/a, none, unknown, --, -) to an empty string.",
     "Keep only numeric range":    "Keeps only rows where this column contains a number within the specified range.",
+    "Deduplicate":                "Removes rows with duplicate values in this column — keeps the first occurrence, removes the rest. Most useful for deduplicating by email when that is the only cleaning needed.",
 }
 
 
@@ -180,6 +183,14 @@ def clean_general_dataframe(df, rules):
                 removal_reasons[new] = df.loc[new, col].apply(
                     lambda v: f"{col}: '{v}' not in range {value}")
                 removed_mask |= mask
+
+        elif action == "Deduplicate":
+            _col_lower = df[col].str.strip().str.lower()
+            _dup_mask  = (_col_lower.duplicated(keep='first')
+                          & (_col_lower != '')
+                          & ~removed_mask)
+            removal_reasons[_dup_mask] = f'Duplicate {col}'
+            removed_mask |= _dup_mask
 
     # Tidy whitespace
     for col in df.columns:
