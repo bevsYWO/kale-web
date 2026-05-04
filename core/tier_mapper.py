@@ -156,7 +156,7 @@ TIER_MAP = {
 BUSINESS_TYPE_EXCLUDE = [
     "church", "non profit", "nonprofit", "non-profit",
     "retail", "community", "charity", "charities",
-    "association", "foundation", "volunteer",
+    "association", "foundation", "volunteer", "other",
 ]
 
 

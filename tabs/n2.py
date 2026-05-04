@@ -9,7 +9,7 @@ import re
 import pandas as pd
 import streamlit as st
 
-from core.tier_mapper import get_tier, TIER_MAP, BUSINESS_TYPE_EXCLUDE
+from core.tier_mapper import get_tier, BUSINESS_TYPE_EXCLUDE
 from core.cleaner import fix_subject_city
 from components.stat_cards import render_stat_cards
 from components.export_button import render_export_button, build_filename
@@ -29,21 +29,9 @@ def _load_file(uploaded) -> pd.DataFrame:
     return pd.read_excel(uploaded, dtype=str, keep_default_na=False)
 
 
-def _find_keyword_col(df: pd.DataFrame):
-    # Prefer explicit keyword columns; avoid matching tier columns (e.g. "Tier Category")
+def _find_category_col(df: pd.DataFrame):
     for col in df.columns:
-        if re.search(r'keyword', col, re.IGNORECASE):
-            return col
-    for col in df.columns:
-        if re.search(r'^business[\s_]?type$', col, re.IGNORECASE):
-            return col
-    return None
-
-
-def _find_business_type_col(df: pd.DataFrame):
-    """Find a dedicated Business Type column for exclusion filtering."""
-    for col in df.columns:
-        if re.search(r'^business[\s_]?type$', col, re.IGNORECASE):
+        if re.search(r'^categor', col, re.IGNORECASE):
             return col
     return None
 
@@ -109,7 +97,7 @@ def render():
     })
 
     st.subheader("N2 Tier Mapper")
-    st.caption("Assigns Tier 1 / 2 / 3 / Do not email based on business type keyword.")
+    st.caption("Assigns Tier 1 / 2 / 3 / Do not email based on the Category column.")
 
     with st.expander("How to use this tab"):
         st.markdown("""
@@ -119,7 +107,7 @@ Reads N2 lead lists and assigns each lead a Tier 1, 2, or 3 based on their busin
 **How to use it**
 1. Upload your leads file.
 2. The tool assigns tiers automatically. Tier 1 = highest priority.
-3. If the file already has a Tier column, choose to keep it or re-map from keyword.
+3. If the file already has a Tier column, choose to keep it or re-map from Category.
 4. Optionally filter by neighborhood and use **Randomize** to interleave T1→T2→T3 for balanced outreach.
 5. Select a platform and download.
 
@@ -152,8 +140,8 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
         st.info("Upload a CSV or Excel file to begin.")
         return
 
-    df_orig      = state["df_orig"]
-    keyword_col  = _find_keyword_col(df_orig)
+    df_orig       = state["df_orig"]
+    category_col  = _find_category_col(df_orig)
     existing_tier_col = _find_tier_col(df_orig)
 
     # ── Tier mapping options ─────────────────────────────────────────────────
@@ -167,14 +155,10 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
             key="n2_remap_mode",
         )
 
-    if keyword_col:
-        st.caption(f"Keyword column detected: **{keyword_col}**")
+    if category_col:
+        st.caption(f"Category column detected: **{category_col}**")
     else:
-        keyword_col = st.selectbox(
-            "Select the keyword / business type column",
-            df_orig.columns.tolist(),
-            key="n2_kw_col",
-        )
+        st.caption("No Category column found — all rows will be marked Unknown and removed.")
 
     # ── BeLocal auto-rules ────────────────────────────────────────────────────
     belocal = "belocal" in (state.get("filename") or "").lower()
@@ -205,8 +189,8 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
                 tier_col = existing_tier_col
             else:
                 tier_col = "Tier"
-                if keyword_col:
-                    df[tier_col] = df[keyword_col].apply(get_tier)
+                if category_col:
+                    df[tier_col] = df[category_col].apply(get_tier)
                 else:
                     df[tier_col] = "Unknown"
 
@@ -215,12 +199,11 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
                 ["do not email", "unknown"]
             )
             exclude_mask = pd.Series([False] * len(df), index=df.index)
-            for _excol in [keyword_col, _find_business_type_col(df)]:
-                if _excol and _excol in df.columns:
-                    _kw = df[_excol].fillna("").str.lower()
-                    exclude_mask |= _kw.apply(
-                        lambda v: any(ex in v for ex in BUSINESS_TYPE_EXCLUDE)
-                    )
+            if category_col and category_col in df.columns:
+                _kw = df[category_col].fillna("").str.lower()
+                exclude_mask |= _kw.apply(
+                    lambda v: any(ex in v for ex in BUSINESS_TYPE_EXCLUDE)
+                )
 
             full_remove = removed_mask | exclude_mask
             df_kept    = df[~full_remove].copy()
