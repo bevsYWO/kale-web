@@ -36,6 +36,13 @@ def _find_category_col(df: pd.DataFrame):
     return None
 
 
+def _find_business_type_col(df: pd.DataFrame):
+    for col in df.columns:
+        if re.search(r'^business[\s_]?type$', col, re.IGNORECASE):
+            return col
+    return None
+
+
 def _find_email_col(df: pd.DataFrame):
     for col in df.columns:
         if re.search(r'^email$|^email[\s_]?address$', col, re.IGNORECASE):
@@ -199,9 +206,10 @@ Both *Do not email* and *Unknown* rows are filtered out and never exported — t
                 ["do not email", "unknown"]
             )
             exclude_mask = pd.Series([False] * len(df), index=df.index)
-            if category_col and category_col in df.columns:
-                _kw = df[category_col].fillna("").str.lower()
-                exclude_mask |= _kw.apply(
+            bt_col = _find_business_type_col(df)
+            if bt_col and bt_col in df.columns:
+                _bt = df[bt_col].fillna("").str.lower()
+                exclude_mask |= _bt.apply(
                     lambda v: any(ex in v for ex in BUSINESS_TYPE_EXCLUDE)
                 )
 
